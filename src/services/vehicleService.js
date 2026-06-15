@@ -1,16 +1,13 @@
 import prisma from "../config/prisma.js";
 
-/**
- * Lấy CustomerID từ UserID.
- * NẾU CHƯA CÓ TRONG BẢNG Customers, TỰ ĐỘNG TẠO MỚI.
- */
+
 const getOrCreateCustomer = async (userId) => {
-  // Tìm CustomerID hiện tại
+
   let customer = await prisma.customers.findFirst({
     where: { UserID: userId },
   });
 
-  // Nếu chưa có, tự tạo mới (Lazy Creation)
+
   if (!customer) {
     customer = await prisma.customers.create({
       data: {
@@ -24,9 +21,7 @@ const getOrCreateCustomer = async (userId) => {
   return customer.CustomerID;
 };
 
-/**
- * Lấy danh sách xe
- */
+
 const getAll = async (filters = {}) => {
   return await prisma.vehicles.findMany({
     where: {
@@ -41,20 +36,16 @@ const getAll = async (filters = {}) => {
   });
 };
 
-/**
- * Lấy chi tiết xe
- */
+
 const getById = async (id) => {
   return await prisma.vehicles.findUnique({
     where: { VehicleID: id },
   });
 };
 
-/**
- * Tạo xe mới
- */
+
 const create = async (data) => {
-  // Kiểm tra trùng biển số trong danh sách xe đang Active
+
   const existing = await prisma.vehicles.findFirst({
     where: {
       LicensePlate: data.LicensePlate,
@@ -71,11 +62,9 @@ const create = async (data) => {
   });
 };
 
-/**
- * Cập nhật thông tin xe
- */
+
 const update = async (id, data) => {
-  // Nếu có đổi biển số, kiểm tra trùng (trừ chính xe đang sửa)
+
   if (data.LicensePlate) {
     const existing = await prisma.vehicles.findFirst({
       where: {
@@ -93,9 +82,7 @@ const update = async (id, data) => {
   });
 };
 
-/**
- * Xóa mềm (Soft Delete)
- */
+
 const deleteSoft = async (id) => {
   return await prisma.vehicles.update({
     where: { VehicleID: id },
