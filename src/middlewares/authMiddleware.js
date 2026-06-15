@@ -10,7 +10,7 @@ const authMiddleware = (req, res, next) => {
 
   const token = authHeader.split(" ")[1];
 
-  // Kiểm tra token có trong blacklist không
+  
   if (authService.isTokenBlacklisted(token)) {
     return res.status(401).json({ message: "Token invalid or destroyed" });
   }
@@ -21,7 +21,7 @@ const authMiddleware = (req, res, next) => {
     }
 
     req.user = decoded;
-    req.token = token; // Lưu token để có thể sử dụng sau này
+    req.token = token; 
     next();
   });
 };

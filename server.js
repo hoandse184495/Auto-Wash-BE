@@ -30,7 +30,27 @@ app.get("/", (req, res) => {
 // Auth Routes
 app.use("/api/auth", authRoute);
 
+// Branch Routes
+import branchRoute from "./src/routes/branchRoute.js";
+app.use("/api/branches", branchRoute);
+
+// User Routes
+import userRoute from "./src/routes/userRoute.js";
+app.use("/api/users", userRoute);
+
+// Service Routes
+import serviceRoute from "./src/routes/serviceRoute.js";
+app.use("/api/services", serviceRoute);
+
+// Branch Services Route
+import branchServiceRoute from "./src/routes/branchServiceRoute.js";
+app.use("/api/branch-services", branchServiceRoute);
+
+// Vehicle Routes
+import vehicleRoute from "./src/routes/vehicleRoute.js";
+app.use("/api/vehicles", vehicleRoute);
+
 // Start Server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(` Server running at http://localhost:${PORT}`);
 });
