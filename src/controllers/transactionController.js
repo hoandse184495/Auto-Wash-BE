@@ -21,16 +21,22 @@ const payManual = async (req, res) => {
   try {
     const transactionId = parseInt(req.params.id);
     const { method } = req.body;
-    const staffId = req.user.userId; // Lấy ID của nhân viên từ JWT Middleware
+    const staffId = req.user.userId;
 
     if (isNaN(transactionId)) {
       return res.status(400).json({ error: "TransactionID không hợp lệ" });
     }
     if (!method) {
-      return res.status(400).json({ error: "Thiếu trường method (CASH hoặc BANK_TRANSFER)" });
+      return res
+        .status(400)
+        .json({ error: "Thiếu trường method (CASH hoặc BANK_TRANSFER)" });
     }
 
-    const result = await transactionService.payManual(transactionId, method, staffId);
+    const result = await transactionService.payManual(
+      transactionId,
+      method,
+      staffId,
+    );
     res.status(200).json(result);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -44,7 +50,6 @@ const createVNPayUrl = async (req, res) => {
       return res.status(400).json({ error: "TransactionID không hợp lệ" });
     }
 
-    // Lấy IP của người dùng để truyền cho VNPay
     const ipAddr =
       req.headers["x-forwarded-for"] ||
       req.connection.remoteAddress ||
@@ -52,7 +57,10 @@ const createVNPayUrl = async (req, res) => {
       req.connection.socket.remoteAddress ||
       "127.0.0.1";
 
-    const paymentUrl = await transactionService.createVNPayUrl(transactionId, ipAddr);
+    const paymentUrl = await transactionService.createVNPayUrl(
+      transactionId,
+      ipAddr,
+    );
 
     res.status(200).json({
       message: "Tạo URL VNPay thành công",
@@ -64,22 +72,43 @@ const createVNPayUrl = async (req, res) => {
 };
 
 const vnpayReturn = (req, res) => {
-  // Giao diện mà người dùng sẽ nhìn thấy sau khi quẹt thẻ xong ở cổng VNPay
   const { vnp_ResponseCode } = req.query;
   if (vnp_ResponseCode === "00") {
     res.send("<h1>Thanh toán thành công! Bạn có thể tắt tab này.</h1>");
   } else {
-    res.send(`<h1>Thanh toán thất bại hoặc đã bị hủy (Mã lỗi: ${vnp_ResponseCode})</h1>`);
+    res.send(
+      `<h1>Thanh toán thất bại hoặc đã bị hủy (Mã lỗi: ${vnp_ResponseCode})</h1>`,
+    );
   }
 };
 
 const vnpayIPN = async (req, res) => {
-  // VNPay Server sẽ gọi ngầm vào API này
   const query = req.query;
   const result = await transactionService.vnpayIPN(query);
-  
-  // Phải trả về đúng JSON theo Format của VNPay yêu cầu để VNPay biết ta đã nhận thành công
+
   res.status(200).json(result);
+};
+
+const applyDiscount = async (req, res) => {
+  try {
+    const transactionId = parseInt(req.params.id);
+    const { promotionId } = req.body;
+
+    if (isNaN(transactionId)) {
+      return res.status(400).json({ error: "TransactionID không hợp lệ" });
+    }
+    if (!promotionId) {
+      return res.status(400).json({ error: "Vui lòng truyền promotionId" });
+    }
+
+    const result = await transactionService.applyDiscount(transactionId, promotionId);
+    res.status(200).json({
+      message: "Áp dụng khuyến mãi thành công",
+      data: result,
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 };
 
 export default {
@@ -88,4 +117,5 @@ export default {
   createVNPayUrl,
   vnpayReturn,
   vnpayIPN,
+  applyDiscount,
 };

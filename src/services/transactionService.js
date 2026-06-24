@@ -168,9 +168,98 @@ const vnpayIPN = async (query) => {
   }
 };
 
+const applyDiscount = async (transactionId, promotionId) => {
+  const transaction = await prisma.transactions.findUnique({
+    where: { TransactionID: transactionId },
+    include: { BookingGroups: true }
+  });
+
+  if (!transaction) throw new Error("Không tìm thấy hóa đơn");
+  if (transaction.Status !== "Pending") {
+    throw new Error("Chỉ có thể áp dụng mã giảm giá cho hóa đơn chưa thanh toán");
+  }
+
+  const promotion = await prisma.promotions.findUnique({
+    where: { PromotionID: promotionId }
+  });
+
+  if (!promotion) throw new Error("Mã khuyến mãi không tồn tại");
+  if (promotion.Status !== "Active") throw new Error("Mã khuyến mãi đã ngưng hoạt động");
+
+  const now = new Date();
+  if (promotion.StartDate && new Date(promotion.StartDate) > now) {
+    throw new Error("Mã khuyến mãi chưa tới thời gian áp dụng");
+  }
+  if (promotion.EndDate && new Date(promotion.EndDate) < now) {
+    throw new Error("Mã khuyến mãi đã hết hạn");
+  }
+
+  // Nếu Khuyến mãi yêu cầu giới hạn Branch
+  if (promotion.BranchID && transaction.BookingGroups?.BranchID !== promotion.BranchID) {
+    throw new Error("Mã khuyến mãi không áp dụng cho chi nhánh này");
+  }
+
+  // TÍNH TOÁN THEO LOGIC CELLPHONES (Tính giảm giá tuần tự nếu sau này có Hạng thành viên)
+  // Bước 1: Giả sử Subtotal là 500k. Ta lấy Subtotal làm Base để trừ khuyến mãi
+  let calculatedDiscount = 0;
+  const baseAmount = parseFloat(transaction.Subtotal);
+
+  if (promotion.DiscountType === "PERCENTAGE") {
+    calculatedDiscount = (baseAmount * parseFloat(promotion.DiscountValue)) / 100;
+  } else if (promotion.DiscountType === "FIXED_AMOUNT") {
+    calculatedDiscount = parseFloat(promotion.DiscountValue);
+  }
+
+  // Không cho phép giảm quá giá trị hóa đơn
+  if (calculatedDiscount > baseAmount) {
+    calculatedDiscount = baseAmount;
+  }
+
+  // Bước 2: Tương lai nếu có Hạng thành viên, ta sẽ trừ tiếp 5% của (baseAmount - calculatedDiscount).
+  // Hiện tại chưa có Loyalty -> FinalAmount = baseAmount - calculatedDiscount
+  const newFinalAmount = baseAmount - calculatedDiscount;
+
+  // Thực thi Transaction DB
+  const result = await prisma.$transaction(async (tx) => {
+    // Xóa khuyến mãi cũ nếu đã áp dụng (Mỗi hóa đơn chỉ xài 1 mã promotion)
+    await tx.transactionDiscounts.deleteMany({
+      where: {
+        BookingGroupID: transaction.BookingGroupID,
+        DiscountType: 'PROMOTION'
+      }
+    });
+
+    // Cập nhật lại Hóa đơn
+    const updatedTx = await tx.transactions.update({
+      where: { TransactionID: transactionId },
+      data: {
+        DiscountAmount: calculatedDiscount,
+        FinalAmount: newFinalAmount
+      }
+    });
+
+    // Ghi log vào TransactionDiscounts
+    await tx.transactionDiscounts.create({
+      data: {
+        BookingGroupID: transaction.BookingGroupID,
+        CustomerID: transaction.CustomerID,
+        PromotionID: promotionId,
+        DiscountType: 'PROMOTION',
+        DiscountAmount: calculatedDiscount,
+        DiscountName: promotion.PromotionName
+      }
+    });
+
+    return updatedTx;
+  });
+
+  return result;
+};
+
 export default {
   createFromBooking,
   payManual,
   createVNPayUrl,
   vnpayIPN,
+  applyDiscount,
 };

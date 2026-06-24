@@ -136,6 +136,42 @@ router.post(
   transactionController.createVNPayUrl,
 );
 
+/**
+ * @openapi
+ * /api/transactions/{id}/apply-discount:
+ *   post:
+ *     summary: Áp dụng mã khuyến mãi vào hóa đơn
+ *     tags: ["Giao dịch & Thanh toán"]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID của Giao dịch (Transaction)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               promotionId:
+ *                 type: integer
+ *           example:
+ *             promotionId: 1
+ *     responses:
+ *       200:
+ *         description: Áp dụng khuyến mãi thành công
+ */
+router.post(
+  "/:id/apply-discount",
+  authMiddleware,
+  transactionController.applyDiscount,
+);
+
 router.get("/vnpay-return", transactionController.vnpayReturn);
 router.get("/vnpay-ipn", transactionController.vnpayIPN);
 
