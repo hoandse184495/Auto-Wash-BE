@@ -30,7 +30,8 @@ const branchSchema = z.object({
  *         name: status
  *         schema:
  *           type: string
- *         description: Lọc theo trạng thái (Active/Inactive)
+ *           enum: [Active, Inactive]
+ *         description: Lọc theo trạng thái. Mặc định ẩn các chi nhánh Inactive (soft-deleted).
  *     responses:
  *       200:
  *         description: Lấy danh sách thành công

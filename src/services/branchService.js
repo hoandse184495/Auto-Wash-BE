@@ -1,8 +1,16 @@
 import prisma from "../config/prisma.js";
 
 const getAllBranches = async (filters = {}) => {
+
+  const where = { ...filters };
+
+
+  if (!Object.prototype.hasOwnProperty.call(filters, "Status")) {
+    where.Status = { not: "Inactive" };
+  }
+
   return await prisma.branches.findMany({
-    where: filters,
+    where,
     orderBy: { BranchID: "asc" },
   });
 };
