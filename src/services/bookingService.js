@@ -11,8 +11,57 @@ const dateToTimeStr = (date) => {
   return date.toISOString().substring(11, 16);
 };
 
+export const buildAvailableSlotsForShift = ({
+  shift,
+  count,
+  bookingDate,
+  slotDuration,
+  buffer,
+  totalBays,
+  bookedPerTime,
+  now = new Date(),
+}) => {
+  const availableSlots = [];
+  let current = new Date(shift.StartTime);
+  const end = new Date(shift.EndTime);
+
+  while (current < end) {
+    const startStr = dateToTimeStr(current);
+
+    const slotEnd = new Date(current.getTime() + slotDuration * 60000);
+    if (slotEnd > end) break;
+
+    const slotDateTime = new Date(bookingDate);
+    const [hours, mins] = startStr.split(":");
+    slotDateTime.setHours(parseInt(hours), parseInt(mins), 0, 0);
+
+    if (slotDateTime < now) {
+      current = new Date(current.getTime() + (slotDuration + buffer) * 60000);
+      continue;
+    }
+
+    const booked = bookedPerTime[startStr] || 0;
+    const available = Math.max(0, totalBays - booked);
+
+    availableSlots.push({
+      StartTime: startStr,
+      EndTime: dateToTimeStr(slotEnd),
+      ShiftName: shift.ShiftName,
+      StaffCount: count,
+      MaxCapacity: totalBays,
+      Booked: booked,
+      Available: available,
+      Status: available > 0 ? "Available" : "Full",
+    });
+
+    current = new Date(current.getTime() + (slotDuration + buffer) * 60000);
+  }
+
+  return availableSlots;
+};
+
 const getAvailableSlots = async (branchId, bookingDateStr) => {
-  const bookingDate = new Date(bookingDateStr);
+  const bookingDate = new Date(`${bookingDateStr}T00:00:00.000Z`);
 
   const config = await prisma.branch_configs.findFirst({
     where: { BranchID: branchId },
@@ -42,6 +91,24 @@ const getAvailableSlots = async (branchId, bookingDateStr) => {
     staffPerShift[shiftId].count += 1;
   });
 
+  if (Object.keys(staffPerShift).length === 0) {
+    const branch = await prisma.branches.findUnique({
+      where: { BranchID: branchId },
+      select: { OpenTime: true, CloseTime: true },
+    });
+
+    if (branch?.OpenTime && branch?.CloseTime) {
+      staffPerShift.default = {
+        shift: {
+          ShiftName: "Ca mặc định",
+          StartTime: branch.OpenTime,
+          EndTime: branch.CloseTime,
+        },
+        count: 1,
+      };
+    }
+  }
+
   const bookings = await prisma.bookingGroups.findMany({
     where: {
       BranchID: branchId,
@@ -63,42 +130,17 @@ const getAvailableSlots = async (branchId, bookingDateStr) => {
   for (const shiftId in staffPerShift) {
     const { shift, count } = staffPerShift[shiftId];
 
-    const capacity = totalBays;
-
-    let current = new Date(shift.StartTime);
-    const end = new Date(shift.EndTime);
-
-    while (current < end) {
-      const startStr = dateToTimeStr(current);
-
-      const slotEnd = new Date(current.getTime() + slotDuration * 60000);
-      if (slotEnd > end) break;
-
-      const slotDateTime = new Date(bookingDate);
-      const [hours, mins] = startStr.split(":");
-      slotDateTime.setHours(parseInt(hours), parseInt(mins), 0, 0);
-
-      if (slotDateTime < new Date()) {
-        current = new Date(current.getTime() + (slotDuration + buffer) * 60000);
-        continue;
-      }
-
-      const booked = bookedPerTime[startStr] || 0;
-      const available = Math.max(0, capacity - booked);
-
-      availableSlots.push({
-        StartTime: startStr,
-        EndTime: dateToTimeStr(slotEnd),
-        ShiftName: shift.ShiftName,
-        StaffCount: count,
-        MaxCapacity: capacity,
-        Booked: booked,
-        Available: available,
-        Status: available > 0 ? "Available" : "Full",
-      });
-
-      current = new Date(current.getTime() + (slotDuration + buffer) * 60000);
-    }
+    availableSlots.push(
+      ...buildAvailableSlotsForShift({
+        shift,
+        count,
+        bookingDate,
+        slotDuration,
+        buffer,
+        totalBays,
+        bookedPerTime,
+      }),
+    );
   }
 
   availableSlots.sort((a, b) => a.StartTime.localeCompare(b.StartTime));
