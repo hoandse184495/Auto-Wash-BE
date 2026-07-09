@@ -99,6 +99,22 @@ const resetPassword = async (email, newPassword) => {
 const register = async (userData) => {
   const { fullName, phone, email, password } = userData;
 
+  if (!fullName || typeof fullName !== "string" || !fullName.trim()) {
+    throw new Error("Vui lòng nhập họ và tên");
+  }
+
+  if (!phone || typeof phone !== "string" || !/^[0-9]{9,15}$/.test(phone)) {
+    throw new Error("Số điện thoại không hợp lệ");
+  }
+
+  if (!email || typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error("Email không hợp lệ");
+  }
+
+  if (!password || typeof password !== "string" || password.length < 6) {
+    throw new Error("Mật khẩu phải có ít nhất 6 ký tự");
+  }
+
   const pool = await poolPromise;
 
   const existingUser = await pool.request().input("Email", email).query(`

@@ -52,4 +52,29 @@ router.get(
   dashboardController.getDailyCashflow
 );
 
+/**
+ * @openapi
+ * /api/dashboard/branch-performance:
+ *   get:
+ *     summary: Lấy số liệu hiệu suất chi nhánh (Booking và doanh thu tháng)
+ *     tags: ["Báo cáo & Đối soát"]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: branchId
+ *         schema:
+ *           type: integer
+ *         description: ID chi nhánh (Admin có thể lọc theo chi nhánh riêng)
+ *     responses:
+ *       200:
+ *         description: Thành công
+ */
+router.get(
+  "/branch-performance",
+  authMiddleware,
+  roleMiddleware(["Admin", "Manager"]),
+  dashboardController.getBranchPerformance
+);
+
 export default router;

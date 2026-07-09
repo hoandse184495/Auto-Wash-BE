@@ -33,6 +33,7 @@ const sendRegisterCode = async (req, res) => {
       message: "Mã xác minh đã được gửi đến email",
     });
   } catch (error) {
+    console.error("[auth] send register code failed:", error);
     res.status(500).json({
       success: false,
       message: "Gửi mã xác minh thất bại",
@@ -73,6 +74,7 @@ const sendForgotPasswordCode = async (req, res) => {
       message: "Mã xác minh đặt lại mật khẩu đã được gửi đến email",
     });
   } catch (error) {
+    console.error("[auth] send forgot password code failed:", error);
     res.status(500).json({
       success: false,
       message: "Gửi mã xác minh thất bại",
@@ -152,7 +154,35 @@ const logout = (req, res) => {
 };
 const register = async (req, res) => {
   try {
-    const { email, code } = req.body;
+    const { fullName, phone, email, password, code } = req.body;
+
+    if (!fullName || !phone || !email || !password || !code) {
+      return res.status(400).json({
+        success: false,
+        message: "Vui lòng nhập đầy đủ họ tên, số điện thoại, email, mật khẩu và mã xác minh",
+      });
+    }
+
+    if (typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Email không hợp lệ",
+      });
+    }
+
+    if (typeof phone !== "string" || !/^[0-9]{9,15}$/.test(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: "Số điện thoại không hợp lệ",
+      });
+    }
+
+    if (typeof password !== "string" || password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Mật khẩu phải có ít nhất 6 ký tự",
+      });
+    }
 
     if (!code) {
       return res.status(400).json({
