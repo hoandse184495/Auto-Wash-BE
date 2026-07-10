@@ -3,12 +3,13 @@ import staffOperationService from "../services/staffOperationService.js";
 const getTodayBookings = async (req, res) => {
   try {
     const branchId = req.user.branchId;
-    const { customerName, status } = req.query;
+    const { customerName, status, bookingDate } = req.query;
 
     const bookings = await staffOperationService.getTodayBookings(
       branchId,
       customerName,
       status,
+      bookingDate,
     );
     res.json({ success: true, data: bookings });
   } catch (error) {

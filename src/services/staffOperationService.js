@@ -1,18 +1,111 @@
 import prisma from "../config/prisma.js";
 
-const getTodayBookings = async (branchId, customerName, status) => {
+const statusPriority = {
+  Pending: 1,
+  Confirmed: 2,
+  CheckedIn: 3,
+  InProgress: 4,
+  Completed: 5,
+  Cancelled: 0,
+};
+
+const normalizeDateKey = (value) => {
+  const date = new Date(value);
+  return date.toISOString().slice(0, 10);
+};
+
+const normalizeTimeKey = (value) => {
+  const date = new Date(value);
+  return date.toISOString().slice(11, 16);
+};
+
+const buildDedupKey = (group, item) => {
+  const vehicleKey =
+    item?.Vehicles?.LicensePlate?.trim().toUpperCase() ||
+    `VID-${item.VehicleID || "UNKNOWN"}`;
+
+  return [
+    group.BranchID,
+    group.CustomerID,
+    normalizeDateKey(group.BookingDate),
+    normalizeTimeKey(group.StartTime),
+    vehicleKey,
+  ].join("|");
+};
+
+const isBetterItem = (candidate, current) => {
+  const candidatePriority = statusPriority[candidate.item.Status] ?? 0;
+  const currentPriority = statusPriority[current.item.Status] ?? 0;
+
+  if (candidatePriority !== currentPriority) {
+    return candidatePriority > currentPriority;
+  }
+
+  const candidateUpdatedAt =
+    new Date(candidate.item.UpdatedAt || candidate.group.UpdatedAt || 0).getTime();
+  const currentUpdatedAt =
+    new Date(current.item.UpdatedAt || current.group.UpdatedAt || 0).getTime();
+
+  if (candidateUpdatedAt !== currentUpdatedAt) {
+    return candidateUpdatedAt > currentUpdatedAt;
+  }
+
+  return candidate.item.BookingItemID > current.item.BookingItemID;
+};
+
+const dedupeBookingItemsBySlot = (bookings) => {
+  const bestByKey = new Map();
+
+  for (const booking of bookings) {
+    const items = booking.BookingItems || [];
+
+    for (const item of items) {
+      const key = buildDedupKey(booking, item);
+      const current = bestByKey.get(key);
+      const candidate = { group: booking, item };
+
+      if (!current || isBetterItem(candidate, current)) {
+        bestByKey.set(key, candidate);
+      }
+    }
+  }
+
+  const chosenByGroupId = new Map();
+
+  for (const selected of bestByKey.values()) {
+    const groupId = selected.group.BookingGroupID;
+
+    if (!chosenByGroupId.has(groupId)) {
+      chosenByGroupId.set(groupId, []);
+    }
+
+    chosenByGroupId.get(groupId).push(selected.item);
+  }
+
+  return bookings
+    .map((booking) => ({
+      ...booking,
+      BookingItems: chosenByGroupId.get(booking.BookingGroupID) || [],
+    }))
+    .filter((booking) => booking.BookingItems.length > 0);
+};
+
+const toDateOnly = (dateStr) => {
+  if (dateStr) {
+    return new Date(`${dateStr}T00:00:00.000Z`);
+  }
+
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const dd = String(today.getDate()).padStart(2, "0");
+  return new Date(`${yyyy}-${mm}-${dd}T00:00:00.000Z`);
+};
 
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-
+const getTodayBookings = async (branchId, customerName, status, bookingDate) => {
   const whereClause = {
     BranchID: branchId,
-    BookingDate: {
-      gte: today,
-      lt: tomorrow,
-    },
+    BookingDate: toDateOnly(bookingDate),
   };
 
   if (status) {
@@ -36,6 +129,9 @@ const getTodayBookings = async (branchId, customerName, status) => {
         },
       },
       BookingItems: {
+        where: {
+          Status: { not: "Cancelled" },
+        },
         include: {
           Vehicles: { select: { LicensePlate: true, Brand: true, Model: true } },
           ServiceLineItems: {
@@ -47,7 +143,7 @@ const getTodayBookings = async (branchId, customerName, status) => {
     orderBy: { StartTime: "asc" },
   });
 
-  return bookings;
+  return dedupeBookingItemsBySlot(bookings);
 };
 
 const updateBookingItemStatus = async (bookingItemId, status, staffId) => {
@@ -135,7 +231,7 @@ const addServicesToItem = async (bookingItemId, branchId, serviceIds) => {
     for (const bs of branchServices) {
       if (existingServiceIds.includes(bs.ServiceID)) continue;
 
-      const price = bs.PriceOverride ?? bs.Services.BasePrice;
+      const price = bs.CustomPrice || bs.Services.BasePrice;
       await tx.serviceLineItems.create({
         data: {
           BookingItemID: bookingItemId,

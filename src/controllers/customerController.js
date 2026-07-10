@@ -1,5 +1,21 @@
 import customerService from "../services/customerService.js";
 
+const getAllCustomersForAdmin = async (req, res) => {
+  try {
+    const customers = await customerService.getAllCustomersForAdmin();
+
+    res.status(200).json({
+      success: true,
+      data: customers,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 const getProfile = async (req, res) => {
   try {
     const { userId } = req.user;
@@ -40,6 +56,7 @@ const updateProfile = async (req, res) => {
 };
 
 export default {
+  getAllCustomersForAdmin,
   getProfile,
   updateProfile,
 };

@@ -9,7 +9,7 @@ const transporter = nodemailer.createTransport({
 });
 
 const sendRegisterCode = async (email, code) => {
-  await transporter.sendMail({
+  const info = await transporter.sendMail({
     from: `"Auto Wash Pro" <${process.env.EMAIL_USER}>`,
     to: email,
     subject: "Mã xác minh đăng ký Auto Wash Pro",
@@ -20,10 +20,16 @@ const sendRegisterCode = async (email, code) => {
       <p>Mã này có hiệu lực trong 5 phút.</p>
     `,
   });
+
+  console.log("[mail] register code sent:", {
+    messageId: info.messageId,
+    accepted: info.accepted,
+    rejected: info.rejected,
+  });
 };
 
 const sendForgotPasswordCode = async (email, code) => {
-  await transporter.sendMail({
+  const info = await transporter.sendMail({
     from: `"Auto Wash Pro" <${process.env.EMAIL_USER}>`,
     to: email,
     subject: "Mã xác minh đặt lại mật khẩu Auto Wash Pro",
@@ -34,6 +40,12 @@ const sendForgotPasswordCode = async (email, code) => {
       <p>Mã này có hiệu lực trong 5 phút.</p>
       <p>Nếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này.</p>
     `,
+  });
+
+  console.log("[mail] forgot password code sent:", {
+    messageId: info.messageId,
+    accepted: info.accepted,
+    rejected: info.rejected,
   });
 };
 

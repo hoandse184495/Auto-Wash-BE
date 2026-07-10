@@ -236,7 +236,7 @@ const createBooking = async (customerId, data) => {
       for (const s of item.Services) {
         const bs = validServiceMap.get(s.ServiceID);
 
-        const price = bs.PriceOverride ?? bs.Services.BasePrice;
+        const price = bs.PriceOverride || bs.Services.BasePrice;
 
         await tx.serviceLineItems.create({
           data: {
