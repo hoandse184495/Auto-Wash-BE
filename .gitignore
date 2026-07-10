@@ -1,0 +1,5 @@
+.env
+node_modules
+README.md
+/src/generated/prisma
+Flow.md
