@@ -1,0 +1,312 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+model AuditLog {
+  AuditID     Int       @id(map: "PK__AuditLog__A17F23B8450500CE") @default(autoincrement())
+  ActorUserID Int?
+  EntityType  String?   @db.NVarChar(100)
+  EntityID    Int?
+  Action      String?   @db.NVarChar(50)
+  OldValue    String?   @db.NVarChar(Max)
+  NewValue    String?   @db.NVarChar(Max)
+  CreateAT    DateTime? @default(now(), map: "DF__AuditLog__Create__2B0A656D") @db.DateTime
+  Users       Users?    @relation(fields: [ActorUserID], references: [UserID], onDelete: NoAction, onUpdate: NoAction, map: "FK__AuditLog__ActorU__2BFE89A6")
+}
+
+model BookingGroups {
+  BookingGroupID       Int                    @id(map: "PK__BookingG__8D987CD4B969CAA9") @default(autoincrement())
+  CustomerID           Int
+  BranchID             Int
+  BookingCode          String                 @unique(map: "UQ__BookingG__C6E56BD549D03F2F") @db.VarChar(50)
+  BookingDate          DateTime?              @db.Date
+  StartTime            DateTime?              @db.Time
+  Status               String?                @db.NVarChar(50)
+  CreatedAt            DateTime?              @default(now(), map: "DF__BookingGr__Creat__04E4BC85") @db.DateTime
+  branches             branches               @relation(fields: [BranchID], references: [BranchID], onUpdate: NoAction, map: "FK__BookingGr__Branc__06CD04F7")
+  Customers            Customers              @relation(fields: [CustomerID], references: [CustomerID], onUpdate: NoAction, map: "FK__BookingGr__Custo__05D8E0BE")
+  BookingItems         BookingItems[]
+  TransactionDiscounts TransactionDiscounts[]
+  Transactions         Transactions[]
+}
+
+model BookingItems {
+  BookingItemID     Int                @id(map: "PK__BookingI__0CBA44A0EAD87200") @default(autoincrement())
+  BookingGroupID    Int
+  VehicleID         Int
+  Status            String?            @db.NVarChar(50)
+  CheckInAt         DateTime?          @db.DateTime
+  WashStartAt       DateTime?          @db.DateTime
+  ReadyForPaymentAt DateTime?          @db.DateTime
+  CompletedAt       DateTime?          @db.DateTime
+  CreatedAt         DateTime?          @default(now(), map: "DF__BookingIt__Creat__09A971A2") @db.DateTime
+  BookingGroups     BookingGroups      @relation(fields: [BookingGroupID], references: [BookingGroupID], onUpdate: NoAction, map: "FK__BookingIt__Booki__0A9D95DB")
+  Vehicles          Vehicles           @relation(fields: [VehicleID], references: [VehicleID], onUpdate: NoAction, map: "FK__BookingIt__Vehic__0B91BA14")
+  ServiceLineItems  ServiceLineItems[]
+}
+
+model branch_configs {
+  ConfigID          Int      @id(map: "PK__branch_c__C3BC333CAC2780E5") @default(autoincrement())
+  BranchID          Int
+  SlotDuration      Int?
+  TotalWashBays     Int?
+  BufferMinutes     Int?
+  MaxCarsPerBooking Int?
+  CancelWindowHours Int?
+  branches          branches @relation(fields: [BranchID], references: [BranchID], onUpdate: NoAction, map: "FK__branch_co__Branc__5BE2A6F2")
+}
+
+model branches {
+  BranchID       Int              @id(map: "PK__branches__A1682FA5DEE60EDD") @default(autoincrement())
+  BranchName     String           @db.NVarChar(255)
+  Address        String?          @db.NVarChar(500)
+  Phone          String?          @db.VarChar(20)
+  OpenTime       DateTime?        @db.Time
+  CloseTime      DateTime?        @db.Time
+  BankAccount    String?          @db.NVarChar(100)
+  Status         String?          @default("Active", map: "DF__branches__Status__49C3F6B7") @db.NVarChar(50)
+  BookingGroups  BookingGroups[]
+  branch_configs branch_configs[]
+  BranchServices BranchServices[]
+  Promotions     Promotions[]
+  Users          Users[]
+}
+
+model BranchServices {
+  BranchServiceID Int      @id(map: "PK__BranchSe__322286F74AEC2053") @default(autoincrement())
+  BranchID        Int
+  ServiceID       Int
+  PriceOverride   Decimal? @db.Decimal(18, 2)
+  Status          String?  @default("Active", map: "DF__BranchSer__Statu__6C190EBB") @db.NVarChar(50)
+  branches        branches @relation(fields: [BranchID], references: [BranchID], onUpdate: NoAction, map: "FK__BranchSer__Branc__6D0D32F4")
+  Services        Services @relation(fields: [ServiceID], references: [ServiceID], onUpdate: NoAction, map: "FK__BranchSer__Servi__6E01572D")
+}
+
+model Customers {
+  CustomerID           Int                    @id(map: "PK__Customer__A4AE64B84E280DB4") @default(autoincrement())
+  UserID               Int?
+  TotalVisits          Int?                   @default(0, map: "DF__Customers__Total__628FA481")
+  TotalSpent           Decimal?               @default(0, map: "DF__Customers__Total__6383C8BA") @db.Decimal(18, 2)
+  CreatedAt            DateTime?              @default(now(), map: "DF__Customers__Creat__6477ECF3") @db.DateTime
+  BookingGroups        BookingGroups[]
+  Users                Users?                 @relation(fields: [UserID], references: [UserID], onDelete: NoAction, onUpdate: NoAction, map: "FK__Customers__UserI__656C112C")
+  LoyaltyAccounts      LoyaltyAccounts[]
+  RewardRedemptions    RewardRedemptions[]
+  TransactionDiscounts TransactionDiscounts[]
+  Transactions         Transactions[]
+  Vehicles             Vehicles[]
+}
+
+model Invoices {
+  InvoiceID     Int          @id(map: "PK__Invoices__D796AAD5CC0F78C9") @default(autoincrement())
+  TransactionID Int
+  InvoiceNo     String?      @unique(map: "UQ__Invoices__D796B227DCA2F8FE") @db.VarChar(100)
+  IssuedAt      DateTime?    @default(now(), map: "DF__Invoices__Issued__2739D489") @db.DateTime
+  Status        String?      @db.NVarChar(50)
+  Transactions  Transactions @relation(fields: [TransactionID], references: [TransactionID], onUpdate: NoAction, map: "FK__Invoices__Transa__282DF8C2")
+}
+
+model LoyaltyAccounts {
+  AccountID         Int                 @id(map: "PK__LoyaltyA__349DA586ECD76D29") @default(autoincrement())
+  CustomerID        Int
+  TierID            Int?
+  CurrentPoints     Int?                @default(0, map: "DF__LoyaltyAc__Curre__70DDC3D8")
+  LifetimePoints    Int?                @default(0, map: "DF__LoyaltyAc__Lifet__71D1E811")
+  LastReviewDate    DateTime?           @db.Date
+  Customers         Customers           @relation(fields: [CustomerID], references: [CustomerID], onUpdate: NoAction, map: "FK__LoyaltyAc__Custo__72C60C4A")
+  tier_configs      tier_configs?       @relation(fields: [TierID], references: [TierID], onDelete: NoAction, onUpdate: NoAction, map: "FK__LoyaltyAc__TierI__73BA3083")
+  PointTransactions PointTransactions[]
+}
+
+model PaymentRecords {
+  PaymentID     Int          @id(map: "PK__PaymentR__9B556A586480B503") @default(autoincrement())
+  TransactionID Int
+  Method        String?      @db.NVarChar(50)
+  Amount        Decimal?     @db.Decimal(18, 2)
+  ReferenceCode String?      @db.VarChar(100)
+  Status        String?      @db.NVarChar(50)
+  ConfirmedBy   Int?
+  ConfirmedAt   DateTime?    @db.DateTime
+  Users         Users?       @relation(fields: [ConfirmedBy], references: [UserID], onDelete: NoAction, onUpdate: NoAction, map: "FK__PaymentRe__Confi__236943A5")
+  Transactions  Transactions @relation(fields: [TransactionID], references: [TransactionID], onUpdate: NoAction, map: "FK__PaymentRe__Trans__22751F6C")
+}
+
+model PointTransactions {
+  PointTransactionID Int             @id(map: "PK__PointTra__4D5BCB5FB6196382") @default(autoincrement())
+  AccountID          Int
+  TransactionID      Int?
+  Type               String?         @db.NVarChar(50)
+  Points             Int
+  ExpiredAt          DateTime?       @db.DateTime
+  CreatedAt          DateTime?       @default(now(), map: "DF__PointTran__Creat__17F790F9") @db.DateTime
+  LoyaltyAccounts    LoyaltyAccounts @relation(fields: [AccountID], references: [AccountID], onUpdate: NoAction, map: "FK__PointTran__Accou__18EBB532")
+  Transactions       Transactions?   @relation(fields: [TransactionID], references: [TransactionID], onDelete: NoAction, onUpdate: NoAction, map: "FK__PointTran__Trans__19DFD96B")
+}
+
+model Promotions {
+  PromotionID          Int                    @id(map: "PK__Promotio__52C42F2FDF290137") @default(autoincrement())
+  BranchID             Int?
+  PromotionName        String                 @db.NVarChar(255)
+  DiscountType         String?                @db.NVarChar(50)
+  DiscountValue        Decimal?               @db.Decimal(18, 2)
+  StartDate            DateTime?              @db.DateTime
+  EndDate              DateTime?              @db.DateTime
+  UsageLimit           Int?
+  Status               String?                @default("Active", map: "DF__Promotion__Statu__00200768") @db.NVarChar(50)
+  branches             branches?              @relation(fields: [BranchID], references: [BranchID], onDelete: NoAction, onUpdate: NoAction, map: "FK__Promotion__Branc__01142BA1")
+  TransactionDiscounts TransactionDiscounts[]
+}
+
+model RewardRedemptions {
+  RedemptionID Int       @id(map: "PK__RewardRe__410680D153F8C35F") @default(autoincrement())
+  RewardID     Int
+  CustomerID   Int
+  RedeemedAt   DateTime? @default(now(), map: "DF__RewardRed__Redee__76969D2E") @db.DateTime
+  Status       String?   @db.NVarChar(50)
+  Customers    Customers @relation(fields: [CustomerID], references: [CustomerID], onUpdate: NoAction, map: "FK__RewardRed__Custo__787EE5A0")
+  Rewards      Rewards   @relation(fields: [RewardID], references: [RewardID], onUpdate: NoAction, map: "FK__RewardRed__Rewar__778AC167")
+}
+
+model Rewards {
+  RewardID          Int                 @id(map: "PK__Rewards__825015992FFFA56C") @default(autoincrement())
+  RewardName        String              @db.NVarChar(255)
+  RequiredPoints    Int
+  DiscountValue     Decimal?            @db.Decimal(18, 2)
+  ValidDays         Int?
+  Status            String?             @default("Active", map: "DF__Rewards__Status__5629CD9C") @db.NVarChar(50)
+  RewardRedemptions RewardRedemptions[]
+}
+
+model ServiceLineItems {
+  LineItemID    Int          @id(map: "PK__ServiceL__8A871BEE3702C687") @default(autoincrement())
+  BookingItemID Int
+  ServiceID     Int
+  Quantity      Int?         @default(1, map: "DF__ServiceLi__Quant__0E6E26BF")
+  UnitPrice     Decimal?     @db.Decimal(18, 2)
+  LineTotal     Decimal?     @db.Decimal(18, 2)
+  Note          String?      @db.NVarChar(500)
+  BookingItems  BookingItems @relation(fields: [BookingItemID], references: [BookingItemID], onUpdate: NoAction, map: "FK__ServiceLi__Booki__0F624AF8")
+  Services      Services     @relation(fields: [ServiceID], references: [ServiceID], onUpdate: NoAction, map: "FK__ServiceLi__Servi__10566F31")
+}
+
+model Services {
+  ServiceID        Int                @id(map: "PK__Services__C51BB0EA0A34C443") @default(autoincrement())
+  ServiceName      String             @db.NVarChar(255)
+  Description      String?            @db.NVarChar(Max)
+  BasePrice        Decimal            @db.Decimal(18, 2)
+  DurationMinutes  Int?
+  Type             String?            @db.NVarChar(100)
+  Status           String?            @default("Active", map: "DF__Services__Status__4CA06362") @db.NVarChar(50)
+  BranchServices   BranchServices[]
+  ServiceLineItems ServiceLineItems[]
+}
+
+model Shifts {
+  ShiftID        Int              @id(map: "PK__Shifts__C0A838E13900706D") @default(autoincrement())
+  ShiftName      String           @db.NVarChar(100)
+  StartTime      DateTime?        @db.Time
+  EndTime        DateTime?        @db.Time
+  Status         String?          @default("Active", map: "DF__Shifts__Status__59063A47") @db.NVarChar(50)
+  StaffSchedules StaffSchedules[]
+}
+
+model StaffSchedules {
+  ScheduleID     Int      @id(map: "PK__StaffSch__9C8A5B69ECAD0A6C") @default(autoincrement())
+  UserID         Int
+  WorkDate       DateTime @db.Date
+  ShiftID        Int
+  CapacityWeight Decimal? @db.Decimal(5, 2)
+  Status         String?  @default("Active", map: "DF__StaffSche__Statu__7B5B524B") @db.NVarChar(50)
+  Shifts         Shifts   @relation(fields: [ShiftID], references: [ShiftID], onUpdate: NoAction, map: "FK__StaffSche__Shift__7D439ABD")
+  Users          Users    @relation(fields: [UserID], references: [UserID], onUpdate: NoAction, map: "FK__StaffSche__UserI__7C4F7684")
+}
+
+model sysdiagrams {
+  name         String @db.NVarChar(128)
+  principal_id Int
+  diagram_id   Int    @id(map: "PK__sysdiagr__C2B05B61AB4BD305") @default(autoincrement())
+  version      Int?
+  definition   Bytes?
+
+  @@unique([principal_id, name], map: "UK_principal_name")
+}
+
+model tier_configs {
+  TierID          Int               @id(map: "PK__tier_con__362F55FDED575A85") @default(autoincrement())
+  TierName        String            @db.NVarChar(100)
+  MinSpent        Decimal?          @default(0, map: "DF__tier_conf__MinSp__4F7CD00D") @db.Decimal(18, 2)
+  DiscountPercent Decimal?          @default(0, map: "DF__tier_conf__Disco__5070F446") @db.Decimal(5, 2)
+  PointMultiplier Decimal?          @default(1, map: "DF__tier_conf__Point__5165187F") @db.Decimal(5, 2)
+  Status          String?           @default("Active", map: "DF__tier_conf__Statu__52593CB8") @db.NVarChar(50)
+  CreatedAt       DateTime?         @default(now(), map: "DF__tier_conf__Creat__534D60F1") @db.DateTime
+  UpdateAt        DateTime?         @db.DateTime
+  LoyaltyAccounts LoyaltyAccounts[]
+}
+
+model TransactionDiscounts {
+  TransactionDiscountID Int            @id(map: "PK__Transact__5F991D07A1E6E312") @default(autoincrement())
+  BookingGroupID        Int?
+  CustomerID            Int?
+  PromotionID           Int?
+  DiscountType          String?        @db.NVarChar(50)
+  ReferenceID           Int?
+  DiscountAmount        Decimal?       @db.Decimal(18, 2)
+  DiscountName          String?        @db.NVarChar(255)
+  CreatedAt             DateTime?      @default(now(), map: "DF__Transacti__Creat__1CBC4616") @db.DateTime
+  BookingGroups         BookingGroups? @relation(fields: [BookingGroupID], references: [BookingGroupID], onDelete: NoAction, onUpdate: NoAction, map: "FK__Transacti__Booki__1DB06A4F")
+  Customers             Customers?     @relation(fields: [CustomerID], references: [CustomerID], onDelete: NoAction, onUpdate: NoAction, map: "FK__Transacti__Custo__1EA48E88")
+  Promotions            Promotions?    @relation(fields: [PromotionID], references: [PromotionID], onDelete: NoAction, onUpdate: NoAction, map: "FK__Transacti__Promo__1F98B2C1")
+}
+
+model Transactions {
+  TransactionID     Int                 @id(map: "PK__Transact__55433A4B7C852B3F") @default(autoincrement())
+  BookingGroupID    Int?
+  CustomerID        Int
+  Subtotal          Decimal?            @db.Decimal(18, 2)
+  DiscountAmount    Decimal?            @db.Decimal(18, 2)
+  FinalAmount       Decimal?            @db.Decimal(18, 2)
+  Status            String?             @db.NVarChar(50)
+  CreatedAt         DateTime?           @default(now(), map: "DF__Transacti__Creat__1332DBDC") @db.DateTime
+  Invoices          Invoices[]
+  PaymentRecords    PaymentRecords[]
+  PointTransactions PointTransactions[]
+  BookingGroups     BookingGroups?      @relation(fields: [BookingGroupID], references: [BookingGroupID], onDelete: NoAction, onUpdate: NoAction, map: "FK__Transacti__Booki__14270015")
+  Customers         Customers           @relation(fields: [CustomerID], references: [CustomerID], onUpdate: NoAction, map: "FK__Transacti__Custo__151B244E")
+}
+
+model Users {
+  UserID         Int              @id(map: "PK__Users__1788CCAC6CA437C5") @default(autoincrement())
+  FullName       String           @db.NVarChar(255)
+  Phone          String?          @db.VarChar(20)
+  Email          String?          @db.VarChar(255)
+  BranchID       Int?
+  PasswordHash   String           @db.VarChar(255)
+  Role           String?          @db.NVarChar(50)
+  Status         String?          @default("Active", map: "DF__Users__Status") @db.NVarChar(50)
+  CreatedAt      DateTime?        @default(now(), map: "DF__Users__CreatedAt__5EBF139D") @db.DateTime
+  UpdatedAt      DateTime?        @db.DateTime
+  AuditLog       AuditLog[]
+  Customers      Customers[]
+  PaymentRecords PaymentRecords[]
+  StaffSchedules StaffSchedules[]
+  branches       branches?        @relation(fields: [BranchID], references: [BranchID], onDelete: NoAction, onUpdate: NoAction, map: "FK__Users__BranchID__5FB337D6")
+}
+
+model Vehicles {
+  VehicleID    Int            @id(map: "PK__Vehicles__476B54B2D433F9DC") @default(autoincrement())
+  CustomerID   Int
+  LicensePlate String         @db.VarChar(50)
+  VehicleType  String?        @db.NVarChar(100)
+  Brand        String?        @db.NVarChar(100)
+  Model        String?        @db.NVarChar(100)
+  Color        String?        @db.NVarChar(50)
+  Status       String?        @default("Active", map: "DF__Vehicles__Status") @db.NVarChar(50)
+  CreatedAt    DateTime?      @default(now(), map: "DF__Vehicles__Create__68487DD7") @db.DateTime
+  BookingItems BookingItems[]
+  Customers    Customers      @relation(fields: [CustomerID], references: [CustomerID], onUpdate: NoAction, map: "FK__Vehicles__Custom__693CA210")
+}

@@ -1,0 +1,51 @@
+# =====================================================================
+#  AutoWash Pro — local database stack
+#
+#  Brings up SQL Server 2022 and automatically restores the official
+#  data from AutoWashPro.bak (mounted read-only into the server).
+#
+#  Usage:
+#    docker compose up -d           # start SQL Server + run restore
+#    docker compose logs -f db-init # watch the restore progress
+#    docker compose down            # stop (data kept in the named volume)
+#    docker compose down -v         # stop AND wipe the database volume
+#
+#  The Backend then connects with the credentials in Auto_Wash_Pro_BE-main/.env
+#  (DB_SERVER=localhost, DB_PORT=1433, DB_NAME=AutoWashPro,
+#  DB_USER=sa, DB_PASSWORD=<your strong SA password>).
+# =====================================================================
+
+services:
+  # --- SQL Server 2022 ------------------------------------------------
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: awp-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${DB_PASSWORD:-AutoWash!Pro2026}"
+      MSSQL_PID: "Developer"
+    ports:
+      - "${DB_PORT:-1433}:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+      # Mount the backup read-only so the restore can read it.
+      - ./AutoWashPro.bak:/var/opt/mssql/backup/AutoWashPro.bak:ro
+    restart: unless-stopped
+
+  # --- One-shot restore job ------------------------------------------
+  db-init:
+    image: mcr.microsoft.com/mssql-tools:latest
+    container_name: awp-db-init
+    depends_on:
+      db:
+        condition: service_started
+    environment:
+      MSSQL_SA_PASSWORD: "${DB_PASSWORD:-AutoWash!Pro2026}"
+    volumes:
+      - ./db:/scripts:ro
+    entrypoint: ["/bin/bash", "/scripts/init.sh"]
+    restart: "no"
+
+volumes:
+  mssql-data:
+    name: awp-mssql-data
