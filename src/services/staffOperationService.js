@@ -239,7 +239,7 @@ const addServicesToItem = async (bookingItemId, branchId, serviceIds) => {
     for (const bs of branchServices) {
       if (existingServiceIds.includes(bs.ServiceID)) continue;
 
-      const price = bs.CustomPrice || bs.Services.BasePrice;
+      const price = bs.PriceOverride ?? bs.Services.BasePrice;
       await tx.serviceLineItems.create({
         data: {
           BookingItemID: bookingItemId,

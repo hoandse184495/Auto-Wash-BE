@@ -1,5 +1,45 @@
 import transactionService from "../services/transactionService.js";
 
+const getAll = async (req, res) => {
+  try {
+    const branchId = req.query.branchId ? parseInt(req.query.branchId) : undefined;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    const allowedStatuses = ["Pending", "Paid", "Cancelled"];
+
+    if (req.query.branchId && (!branchId || branchId < 1)) {
+      return res.status(400).json({ success: false, message: "branchId không hợp lệ" });
+    }
+
+    if (req.query.status && !allowedStatuses.includes(req.query.status)) {
+      return res.status(400).json({ success: false, message: "Trạng thái giao dịch không hợp lệ" });
+    }
+
+    if ((req.query.from && !datePattern.test(req.query.from)) || (req.query.to && !datePattern.test(req.query.to))) {
+      return res.status(400).json({ success: false, message: "Ngày phải có định dạng YYYY-MM-DD" });
+    }
+
+    if (req.query.from && req.query.to && req.query.from > req.query.to) {
+      return res.status(400).json({ success: false, message: "Ngày bắt đầu không được sau ngày kết thúc" });
+    }
+
+    const data = await transactionService.getAll({
+      branchId,
+      status: req.query.status || undefined,
+      from: req.query.from || undefined,
+      to: req.query.to || undefined,
+      search: req.query.search?.trim() || undefined,
+      page,
+      limit,
+    });
+
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 const createFromBooking = async (req, res) => {
   try {
     const bookingId = parseInt(req.params.bookingId);
@@ -128,6 +168,7 @@ const applyReward = async (req, res) => {
 };
 
 export default {
+  getAll,
   createFromBooking,
   payManual,
   createVNPayUrl,

@@ -3,6 +3,132 @@ import vnpayConfig from "../config/vnpayConfig.js";
 
 const pointToMoneyRate = parseInt(process.env.POINT_TO_MONEY_RATE) || 200;
 
+const getAll = async ({
+  branchId,
+  status,
+  from,
+  to,
+  search,
+  page = 1,
+  limit = 20,
+}) => {
+  const where = {};
+
+  if (branchId) {
+    where.BookingGroups = { BranchID: branchId };
+  }
+
+  if (status) {
+    where.Status = status;
+  }
+
+  if (from || to) {
+    where.CreatedAt = {};
+    if (from) where.CreatedAt.gte = new Date(`${from}T00:00:00.000Z`);
+    if (to) {
+      const endExclusive = new Date(`${to}T00:00:00.000Z`);
+      endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+      where.CreatedAt.lt = endExclusive;
+    }
+  }
+
+  if (search) {
+    const numericSearch = Number(search);
+    where.OR = [
+      ...(Number.isInteger(numericSearch) && numericSearch > 0
+        ? [{ TransactionID: numericSearch }]
+        : []),
+      { BookingGroups: { is: { BookingCode: { contains: search } } } },
+      { Customers: { is: { Users: { is: { FullName: { contains: search } } } } } },
+      { Customers: { is: { Users: { is: { Phone: { contains: search } } } } } },
+    ];
+  }
+
+  const paidWhere = status
+    ? status === "Paid"
+      ? where
+      : { ...where, TransactionID: -1 }
+    : { ...where, Status: "Paid" };
+  const [rows, totalItems, paidCount, paidAmount] = await prisma.$transaction([
+    prisma.transactions.findMany({
+      where,
+      include: {
+        BookingGroups: {
+          select: {
+            BookingCode: true,
+            BranchID: true,
+            branches: { select: { BranchName: true } },
+          },
+        },
+        Customers: {
+          select: {
+            Users: { select: { FullName: true, Phone: true } },
+          },
+        },
+        PaymentRecords: {
+          orderBy: { ConfirmedAt: "desc" },
+          take: 1,
+          select: {
+            Method: true,
+            Status: true,
+            ConfirmedAt: true,
+            ReferenceCode: true,
+            Users: { select: { FullName: true } },
+          },
+        },
+      },
+      orderBy: [{ CreatedAt: "desc" }, { TransactionID: "desc" }],
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.transactions.count({ where }),
+    prisma.transactions.count({ where: paidWhere }),
+    prisma.transactions.aggregate({
+      where: paidWhere,
+      _sum: { FinalAmount: true },
+    }),
+  ]);
+
+  const items = rows.map((transaction) => {
+    const payment = transaction.PaymentRecords[0] || null;
+    return {
+      TransactionID: transaction.TransactionID,
+      BookingGroupID: transaction.BookingGroupID,
+      BookingCode: transaction.BookingGroups?.BookingCode || null,
+      CustomerID: transaction.CustomerID,
+      CustomerName: transaction.Customers?.Users?.FullName || null,
+      CustomerPhone: transaction.Customers?.Users?.Phone || null,
+      BranchID: transaction.BookingGroups?.BranchID || null,
+      BranchName: transaction.BookingGroups?.branches?.BranchName || null,
+      Subtotal: transaction.Subtotal,
+      DiscountAmount: transaction.DiscountAmount,
+      FinalAmount: transaction.FinalAmount,
+      Status: transaction.Status,
+      PaymentMethod: payment?.Method || null,
+      PaymentStatus: payment?.Status || null,
+      PaymentReference: payment?.ReferenceCode || null,
+      ConfirmedBy: payment?.Users?.FullName || null,
+      CreatedAt: transaction.CreatedAt,
+      PaidAt: payment?.ConfirmedAt || null,
+    };
+  });
+
+  return {
+    items,
+    summary: {
+      totalTransactions: totalItems,
+      paidTransactions: paidCount,
+      totalPaidAmount: paidAmount._sum.FinalAmount || 0,
+    },
+    pagination: {
+      page,
+      limit,
+      totalItems,
+      totalPages: Math.max(1, Math.ceil(totalItems / limit)),
+    },
+  };
+};
+
 const getRequestedPointsByBooking = async (tx, bookingGroupId) => {
   if (!bookingGroupId) return 0;
 
@@ -653,6 +779,7 @@ const applyReward = async (transactionId, redemptionId) => {
 };
 
 export default {
+  getAll,
   createFromBooking,
   payManual,
   createVNPayUrl,
