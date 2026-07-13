@@ -9,8 +9,8 @@ const router = express.Router();
 
 const createSchema = z.object({
   ShiftName: z.string().min(1, "Tên ca không được để trống"),
-  StartTime: z.string().datetime().optional(), // ISO string like 2024-01-01T08:00:00.000Z
-  EndTime: z.string().datetime().optional(),
+  StartTime: z.string().datetime(), // ISO string like 2024-01-01T08:00:00.000Z
+  EndTime: z.string().datetime(),
 });
 
 const updateSchema = z.object({
@@ -106,7 +106,7 @@ router.get(
 router.post(
   "/",
   authMiddleware,
-  roleMiddleware(["Admin"]),
+  roleMiddleware(["Admin", "Manager"]),
   validate(createSchema),
   shiftController.createShift,
 );
@@ -151,7 +151,7 @@ router.post(
 router.put(
   "/:id",
   authMiddleware,
-  roleMiddleware(["Admin"]),
+  roleMiddleware(["Admin", "Manager"]),
   validate(updateSchema),
   shiftController.updateShift,
 );
@@ -177,7 +177,7 @@ router.put(
 router.delete(
   "/:id",
   authMiddleware,
-  roleMiddleware(["Admin"]),
+  roleMiddleware(["Admin", "Manager"]),
   shiftController.deleteShift,
 );
 

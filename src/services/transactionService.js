@@ -1,6 +1,121 @@
 import prisma from "../config/prisma.js";
 import vnpayConfig from "../config/vnpayConfig.js";
 
+const pointToMoneyRate = parseInt(process.env.POINT_TO_MONEY_RATE) || 200;
+
+const getRequestedPointsByBooking = async (tx, bookingGroupId) => {
+  if (!bookingGroupId) return 0;
+
+  const requestRecord = await tx.transactionDiscounts.findFirst({
+    where: {
+      BookingGroupID: bookingGroupId,
+      DiscountType: "POINT_REQUEST",
+    },
+    orderBy: { CreatedAt: "desc" },
+  });
+
+  return Math.max(0, Number(requestRecord?.ReferenceID || 0));
+};
+
+const calculateAppliedPointDiscount = ({
+  requestedPoints,
+  availablePoints,
+  maxDiscountAmount,
+}) => {
+  if (requestedPoints <= 0 || availablePoints <= 0 || maxDiscountAmount <= 0) {
+    return { usedPoints: 0, discountAmount: 0 };
+  }
+
+  const maxPointsByAmount = Math.floor(maxDiscountAmount / pointToMoneyRate);
+  const usedPoints = Math.max(
+    0,
+    Math.min(requestedPoints, availablePoints, maxPointsByAmount),
+  );
+
+  return {
+    usedPoints,
+    discountAmount: usedPoints * pointToMoneyRate,
+  };
+};
+
+const applyRequestedPointsDiscount = async ({
+  tx,
+  bookingGroupId,
+  customerId,
+  amountAfterOtherDiscounts,
+}) => {
+  const requestedPoints = await getRequestedPointsByBooking(tx, bookingGroupId);
+
+  if (requestedPoints <= 0) {
+    return { usedPoints: 0, pointDiscountAmount: 0 };
+  }
+
+  const loyaltyAccount = await tx.loyaltyAccounts.findFirst({
+    where: { CustomerID: customerId },
+    select: { CurrentPoints: true },
+  });
+
+  const availablePoints = Number(loyaltyAccount?.CurrentPoints || 0);
+  const { usedPoints, discountAmount } = calculateAppliedPointDiscount({
+    requestedPoints,
+    availablePoints,
+    maxDiscountAmount: amountAfterOtherDiscounts,
+  });
+
+  return {
+    usedPoints,
+    pointDiscountAmount: discountAmount,
+  };
+};
+
+const consumeAppliedPointsOnPayment = async (tx, transaction) => {
+  const pointDiscount = await tx.transactionDiscounts.findFirst({
+    where: {
+      BookingGroupID: transaction.BookingGroupID,
+      CustomerID: transaction.CustomerID,
+      DiscountType: "POINT",
+    },
+    orderBy: { CreatedAt: "desc" },
+  });
+
+  if (!pointDiscount) return;
+
+  const pointsToDeduct = Number(pointDiscount.ReferenceID || 0);
+  if (pointsToDeduct <= 0) return;
+
+  const loyaltyAccount = await tx.loyaltyAccounts.findFirst({
+    where: { CustomerID: transaction.CustomerID },
+    select: { AccountID: true, CurrentPoints: true },
+  });
+
+  if (!loyaltyAccount) {
+    throw new Error("Khách hàng chưa có tài khoản điểm thưởng.");
+  }
+
+  const currentPoints = Number(loyaltyAccount.CurrentPoints || 0);
+  if (currentPoints < pointsToDeduct) {
+    throw new Error(
+      `Điểm hiện tại không đủ để thanh toán. Cần ${pointsToDeduct} điểm, hiện có ${currentPoints} điểm.`,
+    );
+  }
+
+  await tx.loyaltyAccounts.update({
+    where: { AccountID: loyaltyAccount.AccountID },
+    data: {
+      CurrentPoints: { decrement: pointsToDeduct },
+    },
+  });
+
+  await tx.pointTransactions.create({
+    data: {
+      AccountID: loyaltyAccount.AccountID,
+      TransactionID: transaction.TransactionID,
+      Type: "REDEEM_AT_PAYMENT",
+      Points: -pointsToDeduct,
+    },
+  });
+};
+
 const handleLoyaltyAfterPayment = async (tx, transaction) => {
   const finalAmount = parseFloat(transaction.FinalAmount);
   if (finalAmount <= 0) return;
@@ -74,10 +189,12 @@ const createFromBooking = async (bookingId) => {
   });
 
   if (!booking) throw new Error("Không tìm thấy Booking");
-  if (booking.Status !== "Completed") {
-    throw new Error(
-      "Chỉ có thể tạo hóa đơn khi đơn đặt lịch đã hoàn thành (Completed)",
-    );
+
+  const bookingItems = booking.BookingItems || [];
+  const hasCompletedItem = bookingItems.some((item) => item.Status === "Completed");
+
+  if (!hasCompletedItem) {
+    throw new Error("Không có xe hoàn thành để lập hóa đơn.");
   }
 
   const existingTransaction = await prisma.transactions.findFirst({
@@ -92,7 +209,9 @@ const createFromBooking = async (bookingId) => {
   }
 
   let subtotal = 0;
-  booking.BookingItems.forEach((item) => {
+  bookingItems
+    .filter((item) => item.Status === "Completed")
+    .forEach((item) => {
     item.ServiceLineItems.forEach((lineItem) => {
       subtotal += parseFloat(lineItem.LineTotal || 0);
     });
@@ -107,15 +226,24 @@ const createFromBooking = async (bookingId) => {
   const tierDiscountPercent = loyaltyAccount?.tier_configs?.DiscountPercent ? parseFloat(loyaltyAccount.tier_configs.DiscountPercent) : 0;
   const tierDiscountAmount = (subtotal * tierDiscountPercent) / 100;
 
-  const finalAmount = subtotal - tierDiscountAmount;
-
   const transaction = await prisma.$transaction(async (tx) => {
+    const amountAfterTier = subtotal - tierDiscountAmount;
+    const { usedPoints, pointDiscountAmount } = await applyRequestedPointsDiscount({
+      tx,
+      bookingGroupId: bookingId,
+      customerId: booking.CustomerID,
+      amountAfterOtherDiscounts: amountAfterTier,
+    });
+
+    const totalDiscount = tierDiscountAmount + pointDiscountAmount;
+    const finalAmount = subtotal - totalDiscount;
+
     const newTx = await tx.transactions.create({
       data: {
         BookingGroupID: bookingId,
         CustomerID: booking.CustomerID,
         Subtotal: subtotal,
-        DiscountAmount: tierDiscountAmount,
+        DiscountAmount: totalDiscount,
         FinalAmount: finalAmount,
         Status: "Pending",
       },
@@ -130,6 +258,19 @@ const createFromBooking = async (bookingId) => {
           DiscountAmount: tierDiscountAmount,
           DiscountName: `Giảm giá hạng ${loyaltyAccount.tier_configs.TierName}`
         }
+      });
+    }
+
+    if (pointDiscountAmount > 0) {
+      await tx.transactionDiscounts.create({
+        data: {
+          BookingGroupID: bookingId,
+          CustomerID: booking.CustomerID,
+          DiscountType: "POINT",
+          ReferenceID: usedPoints,
+          DiscountAmount: pointDiscountAmount,
+          DiscountName: `Quy đổi ${usedPoints} điểm`,
+        },
       });
     }
 
@@ -172,6 +313,8 @@ const payManual = async (transactionId, method, staffId) => {
         ConfirmedAt: new Date(),
       },
     });
+
+    await consumeAppliedPointsOnPayment(tx, updatedTransaction);
 
     await handleLoyaltyAfterPayment(tx, updatedTransaction);
 
@@ -249,6 +392,8 @@ const vnpayIPN = async (query) => {
         },
       });
 
+      await consumeAppliedPointsOnPayment(tx, updatedTx);
+
       await handleLoyaltyAfterPayment(tx, updatedTx);
     });
 
@@ -316,7 +461,15 @@ const applyDiscount = async (transactionId, promotionId) => {
   const tierDiscountPercent = loyaltyAccount?.tier_configs?.DiscountPercent ? parseFloat(loyaltyAccount.tier_configs.DiscountPercent) : 0;
   const tierDiscountAmount = (amountAfterPromo * tierDiscountPercent) / 100;
 
-  const totalDiscount = promoDiscount + tierDiscountAmount;
+  const amountAfterPromoAndTier = amountAfterPromo - tierDiscountAmount;
+  const { usedPoints, pointDiscountAmount } = await applyRequestedPointsDiscount({
+    tx: prisma,
+    bookingGroupId: transaction.BookingGroupID,
+    customerId: transaction.CustomerID,
+    amountAfterOtherDiscounts: amountAfterPromoAndTier,
+  });
+
+  const totalDiscount = promoDiscount + tierDiscountAmount + pointDiscountAmount;
   const newFinalAmount = baseAmount - totalDiscount;
 
 
@@ -325,7 +478,7 @@ const applyDiscount = async (transactionId, promotionId) => {
     await tx.transactionDiscounts.deleteMany({
       where: {
         BookingGroupID: transaction.BookingGroupID,
-        DiscountType: { in: ['PROMOTION', 'TIER', 'REWARD'] }
+        DiscountType: { in: ['PROMOTION', 'TIER', 'REWARD', 'POINT'] }
       }
     });
 
@@ -360,6 +513,19 @@ const applyDiscount = async (transactionId, promotionId) => {
           DiscountAmount: tierDiscountAmount,
           DiscountName: `Giảm giá hạng ${loyaltyAccount.tier_configs.TierName}`
         }
+      });
+    }
+
+    if (pointDiscountAmount > 0) {
+      await tx.transactionDiscounts.create({
+        data: {
+          BookingGroupID: transaction.BookingGroupID,
+          CustomerID: transaction.CustomerID,
+          DiscountType: "POINT",
+          ReferenceID: usedPoints,
+          DiscountAmount: pointDiscountAmount,
+          DiscountName: `Quy đổi ${usedPoints} điểm`,
+        },
       });
     }
 
@@ -410,7 +576,15 @@ const applyReward = async (transactionId, redemptionId) => {
   const tierDiscountPercent = loyaltyAccount?.tier_configs?.DiscountPercent ? parseFloat(loyaltyAccount.tier_configs.DiscountPercent) : 0;
   const tierDiscountAmount = (amountAfterReward * tierDiscountPercent) / 100;
 
-  const totalDiscount = rewardDiscount + tierDiscountAmount;
+  const amountAfterRewardAndTier = amountAfterReward - tierDiscountAmount;
+  const { usedPoints, pointDiscountAmount } = await applyRequestedPointsDiscount({
+    tx: prisma,
+    bookingGroupId: transaction.BookingGroupID,
+    customerId: transaction.CustomerID,
+    amountAfterOtherDiscounts: amountAfterRewardAndTier,
+  });
+
+  const totalDiscount = rewardDiscount + tierDiscountAmount + pointDiscountAmount;
   const newFinalAmount = baseAmount - totalDiscount;
 
   const result = await prisma.$transaction(async (tx) => {
@@ -418,7 +592,7 @@ const applyReward = async (transactionId, redemptionId) => {
     await tx.transactionDiscounts.deleteMany({
       where: {
         BookingGroupID: transaction.BookingGroupID,
-        DiscountType: { in: ['PROMOTION', 'TIER', 'REWARD'] }
+        DiscountType: { in: ['PROMOTION', 'TIER', 'REWARD', 'POINT'] }
       }
     });
 
@@ -450,6 +624,19 @@ const applyReward = async (transactionId, redemptionId) => {
           DiscountAmount: tierDiscountAmount,
           DiscountName: `Giảm giá hạng ${loyaltyAccount.tier_configs.TierName}`
         }
+      });
+    }
+
+    if (pointDiscountAmount > 0) {
+      await tx.transactionDiscounts.create({
+        data: {
+          BookingGroupID: transaction.BookingGroupID,
+          CustomerID: transaction.CustomerID,
+          DiscountType: "POINT",
+          ReferenceID: usedPoints,
+          DiscountAmount: pointDiscountAmount,
+          DiscountName: `Quy đổi ${usedPoints} điểm`,
+        },
       });
     }
 

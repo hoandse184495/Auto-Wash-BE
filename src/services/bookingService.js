@@ -1,5 +1,7 @@
 import prisma from "../config/prisma.js";
 
+const pointToMoneyRate = parseInt(process.env.POINT_TO_MONEY_RATE) || 200;
+
 const timeStrToDate = (timeStr) => {
   const [hours, minutes] = timeStr.split(":");
   const date = new Date(Date.UTC(1970, 0, 1, parseInt(hours), parseInt(minutes)));
@@ -17,13 +19,16 @@ export const buildAvailableSlotsForShift = ({
   bookingDate,
   slotDuration,
   buffer,
-  totalBays,
   bookedPerTime,
   now = new Date(),
 }) => {
   const availableSlots = [];
   let current = new Date(shift.StartTime);
   const end = new Date(shift.EndTime);
+
+  if (!count || count <= 0) {
+    return availableSlots;
+  }
 
   while (current < end) {
     const startStr = dateToTimeStr(current);
@@ -41,14 +46,14 @@ export const buildAvailableSlotsForShift = ({
     }
 
     const booked = bookedPerTime[startStr] || 0;
-    const available = Math.max(0, totalBays - booked);
+    const available = Math.max(0, count - booked);
 
     availableSlots.push({
       StartTime: startStr,
       EndTime: dateToTimeStr(slotEnd),
       ShiftName: shift.ShiftName,
       StaffCount: count,
-      MaxCapacity: totalBays,
+      MaxCapacity: count,
       Booked: booked,
       Available: available,
       Status: available > 0 ? "Available" : "Full",
@@ -60,8 +65,29 @@ export const buildAvailableSlotsForShift = ({
   return availableSlots;
 };
 
+const getTimeMinutes = (value) => {
+  if (!value) return null;
+
+  const text = value instanceof Date ? value.toISOString().substring(11, 16) : String(value);
+  const [hours, minutes] = text.substring(0, 5).split(":").map((item) => parseInt(item, 10));
+
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+
+  return hours * 60 + minutes;
+};
+
+const isSlotCoveredBySchedule = (slotStartMinutes, slotEndMinutes, scheduleStart, scheduleEnd) => {
+  const startMinutes = getTimeMinutes(scheduleStart);
+  const endMinutes = getTimeMinutes(scheduleEnd);
+
+  if (startMinutes === null || endMinutes === null) return false;
+
+  return slotStartMinutes >= startMinutes && slotEndMinutes <= endMinutes;
+};
+
 const getAvailableSlots = async (branchId, bookingDateStr) => {
   const bookingDate = new Date(`${bookingDateStr}T00:00:00.000Z`);
+  const now = new Date();
 
   const config = await prisma.branch_configs.findFirst({
     where: { BranchID: branchId },
@@ -69,8 +95,16 @@ const getAvailableSlots = async (branchId, bookingDateStr) => {
   if (!config) throw new Error("Chi nhánh chưa được thiết lập cấu hình");
 
   const slotDuration = config.SlotDuration || 30;
-  const totalBays = config.TotalWashBays || 8;
   const buffer = config.BufferMinutes || 5;
+
+  const branch = await prisma.branches.findUnique({
+    where: { BranchID: branchId },
+    select: { OpenTime: true, CloseTime: true },
+  });
+
+  if (!branch?.OpenTime || !branch?.CloseTime) {
+    throw new Error("Chi nhánh chưa có giờ mở/đóng cửa");
+  }
 
   const schedules = await prisma.staffSchedules.findMany({
     where: {
@@ -81,33 +115,6 @@ const getAvailableSlots = async (branchId, bookingDateStr) => {
     },
     include: { Shifts: true },
   });
-
-  const staffPerShift = {};
-  schedules.forEach((schedule) => {
-    const shiftId = schedule.ShiftID;
-    if (!staffPerShift[shiftId]) {
-      staffPerShift[shiftId] = { shift: schedule.Shifts, count: 0 };
-    }
-    staffPerShift[shiftId].count += 1;
-  });
-
-  if (Object.keys(staffPerShift).length === 0) {
-    const branch = await prisma.branches.findUnique({
-      where: { BranchID: branchId },
-      select: { OpenTime: true, CloseTime: true },
-    });
-
-    if (branch?.OpenTime && branch?.CloseTime) {
-      staffPerShift.default = {
-        shift: {
-          ShiftName: "Ca mặc định",
-          StartTime: branch.OpenTime,
-          EndTime: branch.CloseTime,
-        },
-        count: 1,
-      };
-    }
-  }
 
   const bookings = await prisma.bookingGroups.findMany({
     where: {
@@ -127,20 +134,62 @@ const getAvailableSlots = async (branchId, bookingDateStr) => {
 
   const availableSlots = [];
 
-  for (const shiftId in staffPerShift) {
-    const { shift, count } = staffPerShift[shiftId];
+  const branchShift = {
+    ShiftName: "Giờ làm việc",
+    StartTime: branch.OpenTime,
+    EndTime: branch.CloseTime,
+  };
 
-    availableSlots.push(
-      ...buildAvailableSlotsForShift({
-        shift,
-        count,
-        bookingDate,
-        slotDuration,
-        buffer,
-        totalBays,
-        bookedPerTime,
-      }),
-    );
+  let current = new Date(branch.OpenTime);
+  const branchEnd = new Date(branch.CloseTime);
+
+  while (current < branchEnd) {
+    const startStr = dateToTimeStr(current);
+    const slotEnd = new Date(current.getTime() + slotDuration * 60000);
+    if (slotEnd > branchEnd) break;
+
+    const slotDateTime = new Date(bookingDate);
+    const [hours, mins] = startStr.split(":");
+    slotDateTime.setHours(parseInt(hours), parseInt(mins), 0, 0);
+
+    if (slotDateTime < now) {
+      current = new Date(current.getTime() + (slotDuration + buffer) * 60000);
+      continue;
+    }
+
+    const slotStartMinutes = getTimeMinutes(startStr);
+    const slotEndMinutes = slotStartMinutes + slotDuration;
+
+    const staffCount = schedules.reduce((count, schedule) => {
+      if (
+        isSlotCoveredBySchedule(
+          slotStartMinutes,
+          slotEndMinutes,
+          schedule.Shifts.StartTime,
+          schedule.Shifts.EndTime,
+        )
+      ) {
+        return count + 1;
+      }
+
+      return count;
+    }, 0);
+
+    const booked = bookedPerTime[startStr] || 0;
+    const available = Math.max(0, staffCount - booked);
+
+    availableSlots.push({
+      StartTime: startStr,
+      EndTime: dateToTimeStr(slotEnd),
+      ShiftName: branchShift.ShiftName,
+      StaffCount: staffCount,
+      MaxCapacity: staffCount,
+      Booked: booked,
+      Available: available,
+      Status: available > 0 ? "Available" : "Full",
+    });
+
+    current = new Date(current.getTime() + (slotDuration + buffer) * 60000);
   }
 
   availableSlots.sort((a, b) => a.StartTime.localeCompare(b.StartTime));
@@ -148,7 +197,6 @@ const getAvailableSlots = async (branchId, bookingDateStr) => {
   return {
     BranchID: branchId,
     BookingDate: bookingDateStr,
-    TotalWashBays: totalBays,
     SlotDuration: slotDuration,
     BufferMinutes: buffer,
     Slots: availableSlots,
@@ -157,6 +205,7 @@ const getAvailableSlots = async (branchId, bookingDateStr) => {
 
 const createBooking = async (customerId, data) => {
   const { BranchID, BookingDate, StartTime, Items } = data;
+  const usePoints = Number(data.UsePoints || 0);
 
   const availableData = await getAvailableSlots(BranchID, BookingDate);
   const targetSlot = availableData.Slots.find((s) => s.StartTime === StartTime);
@@ -248,6 +297,19 @@ const createBooking = async (customerId, data) => {
           },
         });
       }
+    }
+
+    if (usePoints > 0) {
+      await tx.transactionDiscounts.create({
+        data: {
+          BookingGroupID: group.BookingGroupID,
+          CustomerID: customerId,
+          DiscountType: "POINT_REQUEST",
+          ReferenceID: usePoints,
+          DiscountAmount: usePoints * pointToMoneyRate,
+          DiscountName: `Yêu cầu quy đổi ${usePoints} điểm`,
+        },
+      });
     }
 
     return group;

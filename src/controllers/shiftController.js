@@ -6,7 +6,7 @@ const getAllShifts = async (req, res) => {
     if (req.query.Status) {
       filters.Status = req.query.Status;
     } else {
-      if (req.user && req.user.role !== "Admin") {
+      if (req.user && req.user.role === "Staff") {
         filters.Status = "Active";
       }
     }
@@ -43,7 +43,7 @@ const getShiftById = async (req, res) => {
 
 const createShift = async (req, res) => {
   try {
-    const shift = await shiftService.create(req.body);
+    const shift = await shiftService.create(req.body, req.user?.branchId);
     res
       .status(201)
       .json({
@@ -52,7 +52,13 @@ const createShift = async (req, res) => {
         data: shift,
       });
   } catch (error) {
-    if (error.message.includes("tồn tại")) {
+    if (
+      error.message.includes("tồn tại") ||
+      error.message.includes("Chi nhánh") ||
+      error.message.includes("Giờ") ||
+      error.message.includes("Vui lòng") ||
+      error.message.includes("không hợp lệ")
+    ) {
       return res.status(400).json({ success: false, message: error.message });
     }
     res.status(500).json({ success: false, message: error.message });
@@ -70,10 +76,16 @@ const updateShift = async (req, res) => {
         .json({ success: false, message: "Không tìm thấy ca làm việc" });
     }
 
-    const shift = await shiftService.update(id, req.body);
+    const shift = await shiftService.update(id, req.body, req.user?.branchId);
     res.json({ success: true, message: "Cập nhật thành công", data: shift });
   } catch (error) {
-    if (error.message.includes("tồn tại")) {
+    if (
+      error.message.includes("tồn tại") ||
+      error.message.includes("Chi nhánh") ||
+      error.message.includes("Giờ") ||
+      error.message.includes("Vui lòng") ||
+      error.message.includes("không hợp lệ")
+    ) {
       return res.status(400).json({ success: false, message: error.message });
     }
     res.status(500).json({ success: false, message: error.message });

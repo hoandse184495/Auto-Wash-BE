@@ -77,6 +77,22 @@ const getMyBookings = async (req, res) => {
       where: { CustomerID: customer.CustomerID },
       include: {
         branches: { select: { BranchName: true, Address: true } },
+        TransactionDiscounts: {
+          select: {
+            DiscountType: true,
+            DiscountAmount: true,
+          },
+        },
+        Transactions: {
+          orderBy: { CreatedAt: "desc" },
+          take: 1,
+          select: {
+            Subtotal: true,
+            DiscountAmount: true,
+            FinalAmount: true,
+            Status: true,
+          },
+        },
         BookingItems: {
           include: {
             Vehicles: {

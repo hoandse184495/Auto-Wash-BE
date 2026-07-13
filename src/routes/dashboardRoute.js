@@ -77,4 +77,11 @@ router.get(
   dashboardController.getBranchPerformance
 );
 
+router.get(
+  "/manager-overview",
+  authMiddleware,
+  roleMiddleware(["Admin", "Manager"]),
+  dashboardController.getManagerOverview
+);
+
 export default router;

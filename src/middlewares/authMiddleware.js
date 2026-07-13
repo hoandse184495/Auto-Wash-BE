@@ -1,6 +1,17 @@
 import jwt from "jsonwebtoken";
 import authService from "../services/authService.js";
 
+const normalizeRole = (role) => {
+  const value = String(role || "").trim().toLowerCase();
+
+  if (value === "admin") return "Admin";
+  if (value === "manager") return "Manager";
+  if (value === "staff") return "Staff";
+  if (value === "customer") return "Customer";
+
+  return role;
+};
+
 const authMiddleware = (req, res, next) => {
   const authHeader = req.headers.authorization;
 
@@ -20,7 +31,10 @@ const authMiddleware = (req, res, next) => {
       return res.status(403).json({ message: "Invalid or expired token" });
     }
 
-    req.user = decoded;
+    req.user = {
+      ...decoded,
+      role: normalizeRole(decoded.role),
+    };
     req.token = token;
     next();
   });

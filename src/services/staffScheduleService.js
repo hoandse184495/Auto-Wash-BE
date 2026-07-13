@@ -78,7 +78,6 @@ const create = async (data) => {
     data: {
       ...data,
       WorkDate: new Date(data.WorkDate),
-      CapacityWeight: data.CapacityWeight || 1.0,
     },
     include: {
       Users: { select: { FullName: true, Phone: true, BranchID: true } },

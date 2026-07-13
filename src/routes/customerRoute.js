@@ -40,6 +40,25 @@ router.get(
 
 /**
  * @openapi
+ * /api/customers/points-summary:
+ *   get:
+ *     summary: Lấy điểm hiện tại và ngày hết hạn điểm của Khách hàng
+ *     tags: ["Hồ sơ Khách hàng"]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Thành công
+ */
+router.get(
+  "/points-summary",
+  authMiddleware,
+  roleMiddleware(["Customer"]),
+  customerController.getPointsSummary
+);
+
+/**
+ * @openapi
  * /api/customers/profile:
  *   put:
  *     summary: Cập nhật hồ sơ cá nhân của Khách hàng

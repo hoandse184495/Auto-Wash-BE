@@ -11,15 +11,15 @@ test('buildAvailableSlotsForShift creates slots from a branch working window', (
 
   const slots = buildAvailableSlotsForShift({
     shift,
-    count: 1,
+    count: 2,
     bookingDate: new Date('2026-07-08T00:00:00.000Z'),
     slotDuration: 30,
     buffer: 5,
-    totalBays: 8,
     bookedPerTime: {},
     now: new Date('2026-07-08T00:00:00.000Z'),
   });
 
   assert.deepEqual(slots.map((slot) => slot.StartTime), ['08:00']);
-  assert.equal(slots[0].Available, 8);
+  assert.equal(slots[0].StaffCount, 2);
+  assert.equal(slots[0].Available, 2);
 });

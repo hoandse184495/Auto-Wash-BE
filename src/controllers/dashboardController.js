@@ -35,7 +35,24 @@ const getBranchPerformance = async (req, res) => {
   }
 };
 
+const getManagerOverview = async (req, res) => {
+  try {
+    const { branchId, role } = req.user;
+    const queryBranchId = req.query.branchId ? parseInt(req.query.branchId) : branchId;
+
+    const data = await dashboardService.getManagerOverview(queryBranchId, role);
+
+    res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 export default {
   getDailyCashflow,
   getBranchPerformance,
+  getManagerOverview,
 };

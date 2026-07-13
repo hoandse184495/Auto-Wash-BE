@@ -11,6 +11,7 @@ const createBookingSchema = z.object({
   BranchID: z.number().int().positive(),
   BookingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Định dạng YYYY-MM-DD"),
   StartTime: z.string().regex(/^\d{2}:\d{2}$/, "Định dạng HH:mm"),
+  UsePoints: z.number().int().min(0).optional(),
   Items: z.array(
     z.object({
       VehicleID: z.number().int().positive(),

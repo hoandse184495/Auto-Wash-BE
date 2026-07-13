@@ -249,7 +249,85 @@ const getBranchPerformance = async (branchId, role) => {
   }));
 };
 
+const getManagerOverview = async (branchId, role) => {
+  const branchIdNum = branchId ? parseInt(branchId) : null;
+
+  if (role === "Manager" && !branchIdNum) {
+    throw new Error("Tài khoản Manager chưa được gán chi nhánh");
+  }
+
+  const branchFilter =
+    branchIdNum && (role === "Manager" || role === "Admin")
+      ? { BookingGroups: { BranchID: branchIdNum } }
+      : {};
+
+  const today = new Date();
+  const startOfToday = new Date(today);
+  startOfToday.setHours(0, 0, 0, 0);
+  const endOfToday = new Date(today);
+  endOfToday.setHours(23, 59, 59, 999);
+
+  const [totalCompletedBookings, todayBookings, completedToday, pendingBookingsToday] = await Promise.all([
+    prisma.bookingItems.count({
+      where: {
+        Status: "Completed",
+        ...branchFilter,
+      },
+    }),
+    prisma.bookingItems.count({
+      where: {
+        Status: { in: ["Pending", "Confirmed", "CheckedIn", "InProgress", "Completed"] },
+        BookingGroups: {
+          BookingDate: {
+            gte: startOfToday,
+            lte: endOfToday,
+          },
+          ...(branchIdNum && (role === "Manager" || role === "Admin")
+            ? { BranchID: branchIdNum }
+            : {}),
+        },
+      },
+    }),
+    prisma.bookingItems.count({
+      where: {
+        Status: "Completed",
+        BookingGroups: {
+          BookingDate: {
+            gte: startOfToday,
+            lte: endOfToday,
+          },
+          ...(branchIdNum && (role === "Manager" || role === "Admin")
+            ? { BranchID: branchIdNum }
+            : {}),
+        },
+      },
+    }),
+    prisma.bookingItems.count({
+      where: {
+        Status: { in: ["Pending", "Confirmed"] },
+        BookingGroups: {
+          BookingDate: {
+            gte: startOfToday,
+            lte: endOfToday,
+          },
+          ...(branchIdNum && (role === "Manager" || role === "Admin")
+            ? { BranchID: branchIdNum }
+            : {}),
+        },
+      },
+    }),
+  ]);
+
+  return {
+    totalCompletedBookings,
+    todayBookings,
+    completedToday,
+    pendingBookingsToday,
+  };
+};
+
 export default {
   getDailyCashflow,
   getBranchPerformance,
+  getManagerOverview,
 };

@@ -136,8 +136,16 @@ const getTodayBookings = async (branchId, customerName, status, bookingDate) => 
           Vehicles: { select: { LicensePlate: true, Brand: true, Model: true } },
           ServiceLineItems: {
             include: { Services: { select: { ServiceName: true } } },
+            select: {
+              LineTotal: true,
+              UnitPrice: true,
+              Quantity: true,
+            },
           },
         },
+      },
+      Transactions: {
+        select: { Status: true },
       },
     },
     orderBy: { StartTime: "asc" },

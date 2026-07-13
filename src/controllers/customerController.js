@@ -33,6 +33,23 @@ const getProfile = async (req, res) => {
   }
 };
 
+const getPointsSummary = async (req, res) => {
+  try {
+    const { userId } = req.user;
+    const pointsSummary = await customerService.getPointsSummary(userId);
+
+    res.status(200).json({
+      success: true,
+      data: pointsSummary,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 const updateProfile = async (req, res) => {
   try {
     const { userId } = req.user;
@@ -58,5 +75,6 @@ const updateProfile = async (req, res) => {
 export default {
   getAllCustomersForAdmin,
   getProfile,
+  getPointsSummary,
   updateProfile,
 };

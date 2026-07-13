@@ -94,13 +94,25 @@ const updateUser = async (id, data) => {
 };
 
 const deleteUser = async (id) => {
-  return await prisma.users.update({
-    where: { UserID: id },
-    data: {
-      Status: "Inactive",
-      UpdatedAt: new Date(),
-    },
-    select: userSelectFields,
+  return await prisma.$transaction(async (tx) => {
+    await tx.staffSchedules.updateMany({
+      where: {
+        UserID: id,
+        Status: "Active",
+      },
+      data: {
+        Status: "Inactive",
+      },
+    });
+
+    return await tx.users.update({
+      where: { UserID: id },
+      data: {
+        Status: "Inactive",
+        UpdatedAt: new Date(),
+      },
+      select: userSelectFields,
+    });
   });
 };
 

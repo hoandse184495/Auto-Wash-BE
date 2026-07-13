@@ -11,13 +11,11 @@ const createSchema = z.object({
   UserID: z.number().int().positive("UserID phải là số nguyên dương"),
   WorkDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "WorkDate phải có định dạng YYYY-MM-DD"),
   ShiftID: z.number().int().positive("ShiftID phải là số nguyên dương"),
-  CapacityWeight: z.number().positive().optional(),
 });
 
 const updateSchema = z.object({
   WorkDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "WorkDate phải có định dạng YYYY-MM-DD").optional(),
   ShiftID: z.number().int().positive().optional(),
-  CapacityWeight: z.number().positive().optional(),
   Status: z.enum(["Active", "Inactive"]).optional(),
 });
 
@@ -120,9 +118,6 @@ router.get(
  *                 example: "2026-06-25"
  *               ShiftID:
  *                 type: integer
- *               CapacityWeight:
- *                 type: number
- *                 example: 1.0
  *     responses:
  *       201:
  *         description: Thành công
@@ -161,8 +156,6 @@ router.post(
  *                 format: date
  *               ShiftID:
  *                 type: integer
- *               CapacityWeight:
- *                 type: number
  *               Status:
  *                 type: string
  *                 enum: [Active, Inactive]

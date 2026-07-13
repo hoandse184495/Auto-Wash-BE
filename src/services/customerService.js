@@ -1,5 +1,95 @@
 import prisma from "../config/prisma.js";
 
+const getEndOfCurrentYear = (date = new Date()) =>
+  new Date(date.getFullYear(), 11, 31, 23, 59, 59, 999);
+
+const applyYearlyPointExpiryForCustomer = async (customerId) => {
+  const now = new Date();
+  const loyaltyAccounts = await prisma.loyaltyAccounts.findMany({
+    where: { CustomerID: customerId },
+    select: {
+      AccountID: true,
+      CurrentPoints: true,
+      LastReviewDate: true,
+    },
+  });
+
+  for (const account of loyaltyAccounts) {
+    const currentPoints = Number(account.CurrentPoints || 0);
+    const lastReviewDate = account.LastReviewDate;
+    const currentYear = now.getFullYear();
+
+    // Legacy fallback: if LastReviewDate is empty, infer by the latest point transaction year.
+    if (!lastReviewDate) {
+      const latestPointTransaction = await prisma.pointTransactions.findFirst({
+        where: { AccountID: account.AccountID },
+        orderBy: { CreatedAt: "desc" },
+        select: { CreatedAt: true },
+      });
+
+      const latestPointYear = latestPointTransaction?.CreatedAt
+        ? new Date(latestPointTransaction.CreatedAt).getFullYear()
+        : currentYear;
+
+      if (latestPointYear < currentYear && currentPoints > 0) {
+        await prisma.$transaction(async (tx) => {
+          await tx.loyaltyAccounts.update({
+            where: { AccountID: account.AccountID },
+            data: {
+              CurrentPoints: 0,
+              LastReviewDate: now,
+            },
+          });
+
+          await tx.pointTransactions.create({
+            data: {
+              AccountID: account.AccountID,
+              Type: "EXPIRE_YEAR_END",
+              Points: -currentPoints,
+              ExpiredAt: getEndOfCurrentYear(new Date(latestPointYear, 11, 31)),
+              CreatedAt: now,
+            },
+          });
+        });
+        continue;
+      }
+
+      // First-time sync: stamp LastReviewDate without expiring points.
+      await prisma.loyaltyAccounts.update({
+        where: { AccountID: account.AccountID },
+        data: { LastReviewDate: now },
+      });
+      continue;
+    }
+
+    const lastReviewYear = new Date(lastReviewDate).getFullYear();
+
+    if (lastReviewYear < currentYear) {
+      await prisma.$transaction(async (tx) => {
+        await tx.loyaltyAccounts.update({
+          where: { AccountID: account.AccountID },
+          data: {
+            CurrentPoints: 0,
+            LastReviewDate: now,
+          },
+        });
+
+        if (currentPoints > 0) {
+          await tx.pointTransactions.create({
+            data: {
+              AccountID: account.AccountID,
+              Type: "EXPIRE_YEAR_END",
+              Points: -currentPoints,
+              ExpiredAt: getEndOfCurrentYear(new Date(lastReviewYear, 11, 31)),
+              CreatedAt: now,
+            },
+          });
+        }
+      });
+    }
+  }
+};
+
 const getAllCustomersForAdmin = async () => {
   const customers = await prisma.customers.findMany({
     include: {
@@ -56,6 +146,15 @@ const getAllCustomersForAdmin = async () => {
 };
 
 const getProfile = async (userId) => {
+  const customerByUser = await prisma.customers.findFirst({
+    where: { UserID: userId },
+    select: { CustomerID: true },
+  });
+
+  if (customerByUser?.CustomerID) {
+    await applyYearlyPointExpiryForCustomer(customerByUser.CustomerID);
+  }
+
   let customer = await prisma.customers.findFirst({
     where: { UserID: userId },
     include: {
@@ -96,10 +195,62 @@ const getProfile = async (userId) => {
       TotalSpent: 0,
       Vehicles: [],
       LoyaltyAccounts: [],
+      PointsExpiryDate: getEndOfCurrentYear().toISOString(),
     };
   }
 
-  return customer;
+  const pointsExpiryDate = getEndOfCurrentYear().toISOString();
+
+  return {
+    ...customer,
+    PointsExpiryDate: pointsExpiryDate,
+    LoyaltyAccounts: (customer.LoyaltyAccounts || []).map((account) => ({
+      ...account,
+      PointExpiryDate: pointsExpiryDate,
+    })),
+  };
+};
+
+const getPointsSummary = async (userId) => {
+  const customer = await prisma.customers.findFirst({
+    where: { UserID: userId },
+    select: {
+      CustomerID: true,
+      TotalSpent: true,
+    },
+  });
+
+  const pointsExpiryDate = getEndOfCurrentYear().toISOString();
+
+  if (!customer) {
+    return {
+      currentPoints: 0,
+      lifetimePoints: 0,
+      totalSpent: 0,
+      tierName: "Thành viên",
+      pointMultiplier: 1,
+      pointsExpiryDate,
+      isNewCustomer: true,
+    };
+  }
+
+  await applyYearlyPointExpiryForCustomer(customer.CustomerID);
+
+  const loyalty = await prisma.loyaltyAccounts.findFirst({
+    where: { CustomerID: customer.CustomerID },
+    include: { tier_configs: true },
+    orderBy: { AccountID: "desc" },
+  });
+
+  return {
+    currentPoints: Number(loyalty?.CurrentPoints || 0),
+    lifetimePoints: Number(loyalty?.LifetimePoints || 0),
+    totalSpent: Number(customer.TotalSpent || 0),
+    tierName: loyalty?.tier_configs?.TierName || "Thành viên",
+    pointMultiplier: Number(loyalty?.tier_configs?.PointMultiplier || 1),
+    pointsExpiryDate,
+    isNewCustomer: false,
+  };
 };
 
 const updateProfile = async (userId, data) => {
@@ -125,5 +276,6 @@ const updateProfile = async (userId, data) => {
 export default {
   getAllCustomersForAdmin,
   getProfile,
+  getPointsSummary,
   updateProfile,
 };
