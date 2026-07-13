@@ -15,6 +15,13 @@ const payManualSchema = z.object({
   }),
 });
 
+router.get(
+  "/",
+  authMiddleware,
+  roleMiddleware(["Admin"]),
+  transactionController.getAll,
+);
+
 /**
  * @openapi
  * /api/transactions/from-booking/{bookingId}:
