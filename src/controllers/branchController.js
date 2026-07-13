@@ -6,8 +6,9 @@ const getAllBranches = async (req, res) => {
     if (req.query.status) {
       filters.Status = req.query.status;
     }
+    const includeInactive = req.query.includeInactive === "true";
 
-    const branches = await branchService.getAllBranches(filters);
+    const branches = await branchService.getAllBranches(filters, { includeInactive });
     res.status(200).json({
       success: true,
       data: branches,

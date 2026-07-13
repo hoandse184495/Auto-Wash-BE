@@ -16,7 +16,7 @@ const branchSchema = z.object({
   OpenTime: z.any().optional(), // Prisma DateTime field
   CloseTime: z.any().optional(), // Prisma DateTime field
   BankAccount: z.string().nullable().optional(),
-  Status: z.string().nullable().optional(),
+  Status: z.enum(["Active", "Inactive"]).nullable().optional(),
 });
 
 /**

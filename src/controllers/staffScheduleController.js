@@ -16,8 +16,12 @@ const getAllSchedules = async (req, res) => {
       filters.Users = { BranchID: branchId };
     } else if (role === "Staff") {
       filters.UserID = userId;
-    } else if (role === "Admin" && req.query.UserID) {
-      filters.UserID = parseInt(req.query.UserID);
+    } else if (role === "Admin") {
+      if (req.query.UserID) {
+        filters.UserID = parseInt(req.query.UserID);
+      } else if (req.query.BranchID) {
+        filters.Users = { BranchID: parseInt(req.query.BranchID) };
+      }
     }
 
     if (role === "Manager" && req.query.UserID) {

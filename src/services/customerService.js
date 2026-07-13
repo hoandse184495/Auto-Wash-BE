@@ -91,48 +91,52 @@ const applyYearlyPointExpiryForCustomer = async (customerId) => {
 };
 
 const getAllCustomersForAdmin = async () => {
-  const customers = await prisma.customers.findMany({
-    include: {
-      Users: {
-        select: {
-          UserID: true,
-          FullName: true,
-          Phone: true,
-          Email: true,
-          Status: true,
-          CreatedAt: true,
-        },
-      },
-      Vehicles: {
-        where: { Status: "Active" },
-        select: { VehicleID: true },
-      },
-      LoyaltyAccounts: {
-        include: {
-          tier_configs: true,
-        },
-        orderBy: { AccountID: "desc" },
+  const users = await prisma.users.findMany({
+    where: { Role: "Customer" },
+    select: {
+      UserID: true,
+      FullName: true,
+      Phone: true,
+      Email: true,
+      Status: true,
+      CreatedAt: true,
+      Customers: {
+        orderBy: { CustomerID: "desc" },
         take: 1,
+        include: {
+          Vehicles: {
+            where: { Status: "Active" },
+            select: { VehicleID: true },
+          },
+          LoyaltyAccounts: {
+            include: {
+              tier_configs: true,
+            },
+            orderBy: { AccountID: "desc" },
+            take: 1,
+          },
+        },
       },
     },
-    orderBy: { CustomerID: "asc" },
+    orderBy: { UserID: "asc" },
   });
 
-  return customers.map((customer) => {
-    const loyaltyAccount = customer.LoyaltyAccounts[0] ?? null;
+  return users.map((user) => {
+    const customer = user.Customers[0] ?? null;
+    const loyaltyAccount = customer?.LoyaltyAccounts[0] ?? null;
     const tierConfig = loyaltyAccount?.tier_configs ?? null;
 
     return {
-      customerId: customer.CustomerID,
-      userId: customer.Users?.UserID ?? customer.UserID ?? null,
-      fullName: customer.Users?.FullName ?? "Không rõ",
-      email: customer.Users?.Email ?? "",
-      phone: customer.Users?.Phone ?? "",
-      status: customer.Users?.Status ?? "Unknown",
-      createdAt: customer.Users?.CreatedAt ?? customer.CreatedAt ?? null,
-      totalVisits: customer.TotalVisits ?? 0,
-      totalSpent: Number(customer.TotalSpent ?? 0),
-      activeVehicleCount: customer.Vehicles.length,
+      customerId: customer?.CustomerID ?? 0,
+      userId: user.UserID,
+      fullName: user.FullName ?? "Không rõ",
+      email: user.Email ?? "",
+      phone: user.Phone ?? "",
+      status: user.Status ?? "Unknown",
+      createdAt: user.CreatedAt ?? customer?.CreatedAt ?? null,
+      totalVisits: customer?.TotalVisits ?? 0,
+      totalSpent: Number(customer?.TotalSpent ?? 0),
+      activeVehicleCount: customer?.Vehicles.length ?? 0,
       loyalty: {
         accountId: loyaltyAccount?.AccountID ?? null,
         currentPoints: loyaltyAccount?.CurrentPoints ?? 0,

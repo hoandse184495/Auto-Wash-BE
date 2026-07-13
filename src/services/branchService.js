@@ -1,11 +1,11 @@
 import prisma from "../config/prisma.js";
 
-const getAllBranches = async (filters = {}) => {
+const getAllBranches = async (filters = {}, options = {}) => {
 
   const where = { ...filters };
 
 
-  if (!Object.prototype.hasOwnProperty.call(filters, "Status")) {
+  if (!options.includeInactive && !Object.prototype.hasOwnProperty.call(filters, "Status")) {
     where.Status = { not: "Inactive" };
   }
 

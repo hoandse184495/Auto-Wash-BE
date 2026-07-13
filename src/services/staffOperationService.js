@@ -135,8 +135,8 @@ const getTodayBookings = async (branchId, customerName, status, bookingDate) => 
         include: {
           Vehicles: { select: { LicensePlate: true, Brand: true, Model: true } },
           ServiceLineItems: {
-            include: { Services: { select: { ServiceName: true } } },
             select: {
+              Services: { select: { ServiceName: true } },
               LineTotal: true,
               UnitPrice: true,
               Quantity: true,
@@ -144,8 +144,22 @@ const getTodayBookings = async (branchId, customerName, status, bookingDate) => 
           },
         },
       },
+      TransactionDiscounts: {
+        select: {
+          DiscountType: true,
+          DiscountAmount: true,
+        },
+      },
       Transactions: {
-        select: { Status: true },
+        orderBy: { CreatedAt: "desc" },
+        take: 1,
+        select: {
+          Subtotal: true,
+          DiscountAmount: true,
+          FinalAmount: true,
+          Status: true,
+          CreatedAt: true,
+        },
       },
     },
     orderBy: { StartTime: "asc" },

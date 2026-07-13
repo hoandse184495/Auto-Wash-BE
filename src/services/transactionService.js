@@ -23,13 +23,25 @@ const getAll = async ({
   }
 
   if (from || to) {
-    where.CreatedAt = {};
-    if (from) where.CreatedAt.gte = new Date(`${from}T00:00:00.000Z`);
-    if (to) {
-      const endExclusive = new Date(`${to}T00:00:00.000Z`);
-      endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
-      where.CreatedAt.lt = endExclusive;
+    const paidAtRange = {};
+    if (from) {
+      const startOfDay = new Date(from);
+      startOfDay.setHours(0, 0, 0, 0);
+      paidAtRange.gte = startOfDay;
     }
+    if (to) {
+      const endExclusive = new Date(to);
+      endExclusive.setDate(endExclusive.getDate() + 1);
+      endExclusive.setHours(0, 0, 0, 0);
+      paidAtRange.lt = endExclusive;
+    }
+
+    where.PaymentRecords = {
+      some: {
+        Status: "Success",
+        ConfirmedAt: paidAtRange,
+      },
+    };
   }
 
   if (search) {
